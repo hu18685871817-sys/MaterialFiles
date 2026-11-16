@@ -63,5 +63,11 @@
                 android:fitsSystemWindows="true"
                 tools:listitem="@layout/file_item_list" />
         </androidx.swiperefreshlayout.widget.ThemedSwipeRefreshLayout>
+
+        <me.zhanghai.android.files.home.EsHomeDashboardView
+            android:id="@+id/homeDashboardView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
     </me.zhanghai.android.files.ui.CoordinatorScrollingFrameLayout>
 </merge>

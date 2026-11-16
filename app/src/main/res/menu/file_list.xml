@@ -133,6 +133,12 @@
         app:showAsAction="never" />
 
     <item
+        android:id="@+id/action_disk_analysis"
+        android:orderInCategory="100"
+        android:title="@string/file_list_action_disk_analysis"
+        app:showAsAction="never" />
+
+    <item
         android:id="@+id/action_create_shortcut"
         android:orderInCategory="100"
         android:title="@string/file_list_action_create_shortcut"

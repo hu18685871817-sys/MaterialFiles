@@ -17,15 +17,18 @@ import java8.nio.file.Path
 import java8.nio.file.Paths
 import me.zhanghai.android.files.R
 import me.zhanghai.android.files.about.AboutActivity
+import me.zhanghai.android.files.cloud.CloudDriveActivity
 import me.zhanghai.android.files.compat.getDescriptionCompat
 import me.zhanghai.android.files.compat.isPrimaryCompat
 import me.zhanghai.android.files.compat.pathCompat
+import me.zhanghai.android.files.diskanalysis.DiskAnalysisActivity
 import me.zhanghai.android.files.file.JavaFile
 import me.zhanghai.android.files.file.asFileSize
 import me.zhanghai.android.files.ftpserver.FtpServerActivity
 import me.zhanghai.android.files.settings.Settings
 import me.zhanghai.android.files.settings.SettingsActivity
 import me.zhanghai.android.files.settings.StandardDirectoryListActivity
+import me.zhanghai.android.files.viewer.media.MediaPlayerActivity
 import me.zhanghai.android.files.storage.AddStorageDialogActivity
 import me.zhanghai.android.files.storage.FileSystemRoot
 import me.zhanghai.android.files.storage.Storage
@@ -354,8 +357,40 @@ private class BookmarkDirectoryItem(
 }
 
 private val menuItems: List<NavigationItem>
-    @Size(3)
+    @Size(10)
     get() = listOf(
+        CloudDriveNavigationItem(
+            id = R.string.storage_add_storage_google_drive.toLong(),
+            iconRes = R.drawable.cloud_drive_icon_white_24dp,
+            titleRes = R.string.storage_add_storage_google_drive,
+            provider = me.zhanghai.android.files.cloud.CloudProvider.GOOGLE_DRIVE
+        ),
+        CloudDriveNavigationItem(
+            id = R.string.storage_add_storage_onedrive.toLong(),
+            iconRes = R.drawable.cloud_drive_icon_white_24dp,
+            titleRes = R.string.storage_add_storage_onedrive,
+            provider = me.zhanghai.android.files.cloud.CloudProvider.ONEDRIVE
+        ),
+        IntentMenuItem(
+            R.drawable.document_icon_white_24dp, R.string.navigation_document_preview,
+            me.zhanghai.android.files.viewer.document.DocumentPreviewActivity.createIntent()
+        ),
+        IntentMenuItem(
+            R.drawable.reader_icon_white_24dp, R.string.navigation_built_in_reader,
+            me.zhanghai.android.files.viewer.reader.ReaderActivity.createIntent()
+        ),
+        IntentMenuItem(
+            R.drawable.archive_icon_white_24dp, R.string.navigation_archive_preview,
+            me.zhanghai.android.files.viewer.archive.ArchivePreviewActivity.createIntent()
+        ),
+        IntentMenuItem(
+            R.drawable.disk_analysis_icon_white_24dp, R.string.navigation_disk_analysis,
+            DiskAnalysisActivity::class.createIntent()
+        ),
+        IntentMenuItem(
+            R.drawable.media_player_icon_white_24dp, R.string.navigation_media_player,
+            MediaPlayerActivity::class.createIntent()
+        ),
         IntentMenuItem(
             R.drawable.shared_directory_icon_white_24dp, R.string.navigation_ftp_server,
             FtpServerActivity::class.createIntent()
@@ -369,6 +404,24 @@ private val menuItems: List<NavigationItem>
             AboutActivity::class.createIntent()
         )
     )
+
+private class CloudDriveNavigationItem(
+    override val id: Long,
+    @DrawableRes override val iconRes: Int,
+    @StringRes private val titleRes: Int,
+    private val provider: me.zhanghai.android.files.cloud.CloudProvider
+) : NavigationItem() {
+    override fun getTitle(context: Context): String = context.getString(titleRes)
+
+    override fun getSubtitle(context: Context): String =
+        me.zhanghai.android.files.cloud.CloudDriveClient.getActiveSession(context, provider)?.email
+            ?: "点击选择账号并登录"
+
+    override fun onClick(listener: Listener) {
+        listener.launchIntent(CloudDriveActivity.createIntent(provider))
+        listener.closeNavigationDrawer()
+    }
+}
 
 private abstract class MenuItem(
     @DrawableRes override val iconRes: Int,

@@ -613,7 +613,9 @@ class ArchiveFileJob(
     private val archiveFile: Path,
     private val format: Int,
     private val filter: Int,
-    private val password: String?
+    private val password: String?,
+    private val compressionLevel: Int = 6,
+    private val splitVolumeBytes: Long = 0L
 ) : FileJob() {
     @Throws(IOException::class)
     override fun run() {
@@ -624,7 +626,7 @@ class ArchiveFileJob(
         var successful = false
         try {
             channel.use {
-                ArchiveWriter(channel, format, filter, password).use { writer ->
+                ArchiveWriter(channel, format, filter, password, compressionLevel).use { writer ->
                     val transferInfo = TransferInfo(scanInfo, archiveFile)
                     for (source in sources) {
                         val target = getTargetFileName(source)
@@ -632,6 +634,9 @@ class ArchiveFileJob(
                         throwIfInterrupted()
                     }
                 }
+            }
+            if (splitVolumeBytes != 0L) {
+                splitArchiveIntoVolumes(archiveFile, splitVolumeBytes)
             }
             successful = true
         } finally {
@@ -645,6 +650,52 @@ class ArchiveFileJob(
                 }
             }
         }
+    }
+
+    @Throws(IOException::class)
+    private fun splitArchiveIntoVolumes(sourceArchive: Path, requestedSplitBytes: Long) {
+        val javaFile = runCatching { sourceArchive.toFile() }.getOrNull() ?: return
+        if (!javaFile.exists() || javaFile.length() <= 0L) return
+
+        val totalLen = javaFile.length()
+        val chunkSize = when {
+            requestedSplitBytes == -1L -> ((totalLen + 1L) / 2L).coerceAtLeast(1L)
+            requestedSplitBytes > 0L && totalLen <= requestedSplitBytes -> ((totalLen + 1L) / 2L).coerceAtLeast(1L)
+            else -> requestedSplitBytes.coerceAtLeast(1024L)
+        }
+
+        val fullName = javaFile.name
+        val ext = when {
+            fullName.endsWith(".tar.xz", ignoreCase = true) -> "tar.xz"
+            fullName.contains('.') -> fullName.substringAfterLast('.')
+            else -> "zip"
+        }
+        val baseName = fullName.removeSuffix(".$ext")
+        val parentDir = javaFile.parentFile ?: return
+
+        javaFile.inputStream().buffered().use { input ->
+            var partNumber = 1
+            var remaining = totalLen
+            val buffer = ByteArray(64 * 1024)
+            while (remaining > 0L) {
+                val partFile = File(parentDir, "${baseName}.part${partNumber}.$ext")
+                var partRemaining = minOf(chunkSize, remaining)
+                partFile.outputStream().buffered().use { output ->
+                    while (partRemaining > 0L) {
+                        val toRead = minOf(buffer.size.toLong(), partRemaining).toInt()
+                        val read = input.read(buffer, 0, toRead)
+                        if (read <= 0) break
+                        output.write(buffer, 0, read)
+                        partRemaining -= read
+                        remaining -= read
+                    }
+                }
+                partNumber++
+            }
+        }
+        // Remove the unsplit temporary file so the Part1, Part2 volume files represent the split archive
+        runCatching { javaFile.delete() }
+        showToast("已创建分卷压缩文件: ${baseName}.part1.$ext 等")
     }
 
     @Throws(IOException::class)

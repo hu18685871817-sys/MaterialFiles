@@ -66,6 +66,105 @@
                     android:visibility="@integer/create_archive_type_seven_z_visibility" />
             </me.zhanghai.android.files.filelist.CreateArchiveTypeRadioGroup>
 
+            <!-- Compression Level Selector: Fast / Normal / Maximum -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="?dialogPreferredPadding"
+                android:layout_marginEnd="?dialogPreferredPadding"
+                android:layout_marginTop="8dp"
+                android:text="压缩等级（权衡速度与体积）"
+                android:textAppearance="?textAppearanceCaption" />
+
+            <RadioGroup
+                android:id="@+id/compressionLevelGroup"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="@dimen/dialog_padding_minus_6dp"
+                android:paddingEnd="@dimen/dialog_padding"
+                android:orientation="horizontal">
+
+                <RadioButton
+                    android:id="@+id/levelFastRadio"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:minHeight="@dimen/dense_single_line_list_item_height"
+                    android:layout_weight="1"
+                    android:text="快速压缩"
+                    android:textSize="13sp" />
+
+                <RadioButton
+                    android:id="@+id/levelNormalRadio"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:minHeight="@dimen/dense_single_line_list_item_height"
+                    android:layout_weight="1"
+                    android:checked="true"
+                    android:text="标准压缩"
+                    android:textSize="13sp" />
+
+                <RadioButton
+                    android:id="@+id/levelMaxRadio"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:minHeight="@dimen/dense_single_line_list_item_height"
+                    android:layout_weight="1"
+                    android:text="最大压缩"
+                    android:textSize="13sp" />
+            </RadioGroup>
+
+            <!-- Split Volume Selector: Single / Part1+Part2 -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="?dialogPreferredPadding"
+                android:layout_marginEnd="?dialogPreferredPadding"
+                android:layout_marginTop="6dp"
+                android:text="分卷压缩（支持生成 ZIP Part1、Part2 分卷文件）"
+                android:textAppearance="?textAppearanceCaption" />
+
+            <RadioGroup
+                android:id="@+id/splitVolumeGroup"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="@dimen/dialog_padding_minus_6dp"
+                android:paddingEnd="@dimen/dialog_padding"
+                android:orientation="vertical">
+
+                <RadioButton
+                    android:id="@+id/splitNoneRadio"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="36dp"
+                    android:checked="true"
+                    android:text="不分卷（创建单个完整压缩包）"
+                    android:textSize="13sp" />
+
+                <RadioButton
+                    android:id="@+id/splitAutoTwoPartsRadio"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="36dp"
+                    android:text="自动拆分为 Part1 / Part2 分卷压缩包"
+                    android:textSize="13sp" />
+
+                <RadioButton
+                    android:id="@+id/split1MbRadio"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="36dp"
+                    android:text="按 1 MB / 卷拆分 (Part1, Part2...)"
+                    android:textSize="13sp" />
+
+                <RadioButton
+                    android:id="@+id/split10MbRadio"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="36dp"
+                    android:text="按 10 MB / 卷拆分 (Part1, Part2...)"
+                    android:textSize="13sp" />
+            </RadioGroup>
+
             <com.google.android.material.textfield.TextInputLayout
                 android:id="@+id/passwordLayout"
                 android:layout_width="match_parent"
@@ -73,7 +172,7 @@
                 android:layout_marginStart="?dialogPreferredPadding"
                 android:layout_marginEnd="?dialogPreferredPadding"
                 android:layout_marginTop="4dp"
-                android:hint="@string/file_create_archive_password"
+                android:hint="加密压缩密码（解压或预览时需输入密码验证）"
                 app:passwordToggleEnabled="true">
 
                 <com.google.android.material.textfield.TextInputEditText

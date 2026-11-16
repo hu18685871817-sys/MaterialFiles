@@ -643,4 +643,31 @@
     <string name="about_author_name_title">张海</string>
     <string name="about_author_github_title">在 GitHub 上关注</string>
     <string name="about_author_twitter_title">在 Twitter 上关注</string>
+
+    <string name="navigation_disk_analysis">磁盘空间分析</string>
+    <string name="navigation_media_player">内置音视频播放器</string>
+    <string name="navigation_cloud_drive">云盘管理 (Google Drive / OneDrive)</string>
+    <string name="file_list_action_disk_analysis">磁盘空间分析</string>
+    <string name="disk_analysis_title">磁盘空间分析</string>
+    <string name="disk_analysis_total_space">总容量</string>
+    <string name="disk_analysis_used_space">已用空间</string>
+    <string name="disk_analysis_free_space">可用空间</string>
+    <string name="disk_analysis_type_distribution">文件类型占比分析</string>
+    <string name="disk_analysis_folder_ranking">按文件夹大小排序</string>
+    <string name="disk_analysis_category_image">图片</string>
+    <string name="disk_analysis_category_video">视频</string>
+    <string name="disk_analysis_category_audio">音频</string>
+    <string name="disk_analysis_category_document">文档</string>
+    <string name="disk_analysis_category_apk">安装包</string>
+    <string name="disk_analysis_category_other">压缩包与其他</string>
+    <string name="media_player_title">音视频播放器</string>
+    <string name="storage_add_storage_google_drive">Google Drive 云盘</string>
+    <string name="storage_add_storage_onedrive">Microsoft OneDrive 云盘</string>
+    <string name="cloud_drive_title">云盘文件浏览器</string>
+    <string name="navigation_document_preview">Office 与 Markdown 实时预览</string>
+    <string name="navigation_built_in_reader">内置阅读器 (记忆缓存)</string>
+    <string name="navigation_archive_preview">压缩包预览与分卷/加密</string>
+    <string name="document_preview_title">文档预览与实时渲染</string>
+    <string name="built_in_reader_title">内置阅读器</string>
+    <string name="archive_preview_title">压缩包免解压预览</string>
 </resources>

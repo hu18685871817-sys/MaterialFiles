@@ -64,13 +64,17 @@ import me.zhanghai.android.files.databinding.FileListFragmentBottomBarIncludeBin
 import me.zhanghai.android.files.databinding.FileListFragmentContentIncludeBinding
 import me.zhanghai.android.files.databinding.FileListFragmentIncludeBinding
 import me.zhanghai.android.files.databinding.FileListFragmentSpeedDialIncludeBinding
+import me.zhanghai.android.files.diskanalysis.DiskAnalysisActivity
 import me.zhanghai.android.files.file.FileItem
 import me.zhanghai.android.files.file.MimeType
 import me.zhanghai.android.files.file.asMimeTypeOrNull
 import me.zhanghai.android.files.file.extension
 import me.zhanghai.android.files.file.fileProviderUri
 import me.zhanghai.android.files.file.isApk
+import me.zhanghai.android.files.file.isAudio
 import me.zhanghai.android.files.file.isImage
+import me.zhanghai.android.files.file.isVideo
+import me.zhanghai.android.files.viewer.media.MediaPlayerActivity
 import me.zhanghai.android.files.filejob.FileJobService
 import me.zhanghai.android.files.filelist.FileSortOptions.By
 import me.zhanghai.android.files.filelist.FileSortOptions.Order
@@ -181,6 +185,10 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
 
     private lateinit var adapter: FileListAdapter
 
+    private var isHomeDashboardActive: Boolean = false
+    private val folderTabs = mutableListOf<Path>()
+    private var activeFolderTabIndex: Int = 0
+
     private val debouncedSearchRunnable = DebouncedRunnable(Handler(Looper.getMainLooper()), 1000) {
         if (!isResumed || !viewModel.isSearchViewExpanded) {
             return@DebouncedRunnable
@@ -234,6 +242,18 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
         }
         binding.appBarLayout.syncBackgroundColorTo(binding.overlayToolbar)
         binding.breadcrumbLayout.setListener(this)
+        binding.homeDashboardView.onNavigateToFolder = { targetPath ->
+            switchToFolderTab(targetPath)
+        }
+        if (folderTabs.isEmpty()) {
+            val rootPath = Paths.get(Environment.getExternalStorageDirectory().absolutePath)
+            val downloadPath = Paths.get(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).absolutePath
+            )
+            folderTabs.add(rootPath)
+            folderTabs.add(downloadPath)
+        }
+        renderMultiTabStrip()
         if (!(activity.hasSw600Dp && activity.isOrientationLandscape)) {
             binding.swipeRefreshLayout.setProgressViewEndTarget(
                 true, binding.swipeRefreshLayout.progressViewEndOffset
@@ -536,6 +556,12 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
                 addBookmark()
                 true
             }
+            R.id.action_disk_analysis -> {
+                startActivitySafe(
+                    DiskAnalysisActivity.createIntent(requireContext(), viewModel.currentPath)
+                )
+                true
+            }
             R.id.action_create_shortcut -> {
                 createShortcut()
                 true
@@ -578,8 +604,171 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
     }
 
     private fun onCurrentPathChanged(path: Path) {
+        if (!isHomeDashboardActive && activeFolderTabIndex in folderTabs.indices) {
+            folderTabs[activeFolderTabIndex] = path
+            renderMultiTabStrip()
+        }
         updateOverlayToolbar()
         updateBottomToolbar()
+    }
+
+    private fun switchToFolderTab(path: Path) {
+        isHomeDashboardActive = false
+        val existingIdx = folderTabs.indexOfFirst { it == path }
+        if (existingIdx >= 0) {
+            activeFolderTabIndex = existingIdx
+        } else {
+            folderTabs.add(path)
+            activeFolderTabIndex = folderTabs.lastIndex
+        }
+        updateHomeDashboardVisibility()
+        viewModel.resetTo(path)
+        renderMultiTabStrip()
+    }
+
+    private fun updateHomeDashboardVisibility() {
+        binding.homeDashboardView.isVisible = isHomeDashboardActive
+        binding.swipeRefreshLayout.isVisible = !isHomeDashboardActive
+        binding.breadcrumbLayout.isVisible = !isHomeDashboardActive
+        binding.speedDialView.isVisible = !isHomeDashboardActive
+        if (isHomeDashboardActive) {
+            binding.emptyView.isVisible = false
+            binding.errorText.isVisible = false
+            binding.progress.isVisible = false
+            binding.homeDashboardView.refreshDashboardData()
+        }
+    }
+
+    private fun renderMultiTabStrip() {
+        val strip = binding.multiTabStripLayout
+        strip.removeAllViews()
+        val ctx = requireContext()
+        val density = resources.displayMetrics.density
+        fun dp(v: Int): Int = (v * density).toInt()
+
+        // 1. Pinned Home Dashboard Tab (🏠 主页看板)
+        val homeTab = TextView(ctx).apply {
+            text = "🏠 主页看板"
+            textSize = 12f
+            setTypeface(null, if (isHomeDashboardActive) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+            setTextColor(
+                if (isHomeDashboardActive) android.graphics.Color.WHITE
+                else android.graphics.Color.parseColor("#334155")
+            )
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = dp(14).toFloat()
+                setColor(
+                    if (isHomeDashboardActive) android.graphics.Color.parseColor("#2563EB")
+                    else android.graphics.Color.parseColor("#E2E8F0")
+                )
+            }
+            setPadding(dp(12), dp(5), dp(12), dp(5))
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { rightMargin = dp(6) }
+            setOnClickListener {
+                isHomeDashboardActive = true
+                updateHomeDashboardVisibility()
+                renderMultiTabStrip()
+            }
+        }
+        strip.addView(homeTab)
+
+        // 2. Open Folder Tabs
+        folderTabs.forEachIndexed { idx, tabPath ->
+            val selected = !isHomeDashboardActive && idx == activeFolderTabIndex
+            val folderName = tabPath.fileName?.toString()?.takeIf { it.isNotEmpty() } ?: "内部存储"
+            val displayLabel = if (folderName == "0") "内部存储" else folderName
+
+            val tabChip = android.widget.LinearLayout(ctx).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = dp(14).toFloat()
+                    setColor(
+                        if (selected) android.graphics.Color.parseColor("#2563EB")
+                        else android.graphics.Color.parseColor("#E2E8F0")
+                    )
+                }
+                setPadding(dp(10), dp(4), dp(8), dp(4))
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { rightMargin = dp(6) }
+                setOnClickListener {
+                    isHomeDashboardActive = false
+                    activeFolderTabIndex = idx
+                    updateHomeDashboardVisibility()
+                    if (viewModel.currentPath != tabPath) {
+                        viewModel.resetTo(tabPath)
+                    }
+                    renderMultiTabStrip()
+                }
+            }
+
+            val labelTv = TextView(ctx).apply {
+                text = "📁 $displayLabel"
+                textSize = 12f
+                maxLines = 1
+                setTypeface(null, if (selected) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+                setTextColor(
+                    if (selected) android.graphics.Color.WHITE
+                    else android.graphics.Color.parseColor("#334155")
+                )
+            }
+            tabChip.addView(labelTv)
+
+            if (folderTabs.size > 1) {
+                val closeTv = TextView(ctx).apply {
+                    text = " ×"
+                    textSize = 13f
+                    setTypeface(null, android.graphics.Typeface.BOLD)
+                    setTextColor(
+                        if (selected) android.graphics.Color.WHITE
+                        else android.graphics.Color.parseColor("#64748B")
+                    )
+                    setPadding(dp(4), 0, dp(2), 0)
+                    setOnClickListener {
+                        folderTabs.removeAt(idx)
+                        if (activeFolderTabIndex >= folderTabs.size) {
+                            activeFolderTabIndex = folderTabs.lastIndex.coerceAtLeast(0)
+                        }
+                        if (!isHomeDashboardActive && folderTabs.isNotEmpty()) {
+                            viewModel.resetTo(folderTabs[activeFolderTabIndex])
+                        }
+                        renderMultiTabStrip()
+                    }
+                }
+                tabChip.addView(closeTv)
+            }
+
+            strip.addView(tabChip)
+        }
+
+        // 3. [ + ] Add New Folder Tab button
+        val addTabBtn = TextView(ctx).apply {
+            text = "＋ 新建标签"
+            textSize = 11f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(android.graphics.Color.parseColor("#2563EB"))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = dp(14).toFloat()
+                setColor(android.graphics.Color.parseColor("#EFF6FF"))
+                setStroke(dp(1), android.graphics.Color.parseColor("#BFDBFE"))
+            }
+            setPadding(dp(10), dp(4), dp(10), dp(4))
+            setOnClickListener {
+                val defaultRoot = Paths.get(Environment.getExternalStorageDirectory().absolutePath)
+                folderTabs.add(defaultRoot)
+                isHomeDashboardActive = false
+                activeFolderTabIndex = folderTabs.lastIndex
+                updateHomeDashboardVisibility()
+                viewModel.resetTo(defaultRoot)
+                renderMultiTabStrip()
+            }
+        }
+        strip.addView(addTabBtn)
     }
 
     private fun onSearchViewExpandedChanged(expanded: Boolean) {
@@ -894,6 +1083,7 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
             menu.findItem(R.id.action_extract).isVisible = areAllFilesArchiveFiles
             val isCurrentPathReadOnly = viewModel.currentPath.fileSystem.isReadOnly
             menu.findItem(R.id.action_archive).isVisible = !isCurrentPathReadOnly
+            menu.findItem(R.id.action_select_range)?.isVisible = files.size >= 2
         }
         if (!overlayActionMode.isActive) {
             binding.appBarLayout.setExpanded(true)
@@ -945,6 +1135,13 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
             }
             R.id.action_share -> {
                 shareFiles(viewModel.selectedFiles)
+                true
+            }
+            R.id.action_select_range -> {
+                val count = adapter.selectRangeFiles()
+                if (count > 0) {
+                    showToast("已范围选择区间内共 $count 个项目")
+                }
                 true
             }
             R.id.action_select_all -> {
@@ -1006,11 +1203,20 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
         name: String,
         format: Int,
         filter: Int,
-        password: String?
+        password: String?,
+        compressionLevel: Int,
+        splitVolumeBytes: Long
     ) {
         val archiveFile = viewModel.currentPath.resolve(name)
         FileJobService.archive(
-            makePathListForJob(files), archiveFile, format, filter, password, requireContext()
+            makePathListForJob(files),
+            archiveFile,
+            format,
+            filter,
+            password,
+            requireContext(),
+            compressionLevel,
+            splitVolumeBytes
         )
         viewModel.selectFiles(files, false)
     }
@@ -1215,8 +1421,59 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
             openApk(file)
             return
         }
+        val lowerName = file.name.lowercase()
+        if (!file.attributes.isDirectory && !file.path.isArchivePath) {
+            if (lowerName.endsWith(".docx") ||
+                lowerName.endsWith(".xlsx") ||
+                lowerName.endsWith(".csv") ||
+                lowerName.endsWith(".md") ||
+                lowerName.endsWith(".markdown")
+            ) {
+                startActivitySafe(
+                    me.zhanghai.android.files.viewer.document.DocumentPreviewActivity.createIntent(
+                        context = requireContext(),
+                        path = file.path
+                    )
+                )
+                return
+            }
+            if (lowerName.endsWith(".txt") || lowerName.endsWith(".log")) {
+                startActivitySafe(
+                    me.zhanghai.android.files.viewer.reader.ReaderActivity.createIntent(
+                        context = requireContext(),
+                        path = file.path,
+                        title = file.name
+                    )
+                )
+                return
+            }
+            val isSplitArchivePart = lowerName.matches(Regex(""".*\.part\d+\.(zip|rar|7z|tar\.xz|tar)$""")) ||
+                lowerName.matches(Regex(""".*\.(zip|rar|7z|tar)\.\d{3}$"""))
+            if (isSplitArchivePart) {
+                startActivitySafe(
+                    me.zhanghai.android.files.viewer.archive.ArchivePreviewActivity.createIntent(
+                        context = requireContext(),
+                        path = file.path
+                    )
+                )
+                return
+            }
+        }
         if (file.isListable) {
             navigateTo(file.listablePath)
+            return
+        }
+        if ((file.mimeType.isAudio || file.mimeType.isVideo) && !file.path.isArchivePath) {
+            startActivitySafe(
+                MediaPlayerActivity.createIntent(
+                    requireContext(),
+                    file.path.fileProviderUri,
+                    file.name,
+                    file.mimeType.isVideo
+                ).apply {
+                    extraPath = file.path
+                }
+            )
             return
         }
         openFileWithIntent(file, false)
@@ -1661,6 +1918,7 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
         val appBarLayout: CoordinatorAppBarLayout,
         val toolbar: Toolbar,
         val overlayToolbar: Toolbar,
+        val multiTabStripLayout: android.widget.LinearLayout,
         val breadcrumbLayout: BreadcrumbLayout,
         val contentLayout: ViewGroup,
         val progress: ProgressBar,
@@ -1668,6 +1926,7 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
         val emptyView: View,
         val swipeRefreshLayout: SwipeRefreshLayout,
         val recyclerView: RecyclerView,
+        val homeDashboardView: me.zhanghai.android.files.home.EsHomeDashboardView,
         val bottomBarLayout: ViewGroup,
         val bottomToolbar: Toolbar,
         val bottomCreateFileNameEdit: EditText,
@@ -1690,9 +1949,11 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
                     bindingRoot, includeBinding.drawerLayout, includeBinding.persistentDrawerLayout,
                     includeBinding.persistentBarLayout, appBarBinding.appBarLayout,
                     appBarBinding.toolbar, appBarBinding.overlayToolbar,
+                    appBarBinding.multiTabStripLayout,
                     appBarBinding.breadcrumbLayout, contentBinding.contentLayout,
                     contentBinding.progress, contentBinding.errorText, contentBinding.emptyView,
                     contentBinding.swipeRefreshLayout, contentBinding.recyclerView,
+                    contentBinding.homeDashboardView,
                     bottomBarBinding.bottomBarLayout, bottomBarBinding.bottomToolbar,
                     bottomBarBinding.bottomCreateFileNameEdit, speedDialBinding.speedDialView
                 )

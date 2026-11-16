@@ -25,7 +25,8 @@ class WriteArchive @Throws(ArchiveException::class) constructor(
     channel: SeekableByteChannel,
     format: Int,
     filter: Int,
-    password: String?
+    password: String?,
+    compressionLevel: Int = 6
 ) : Closeable {
     private val archive = Archive.writeNew()
 
@@ -36,14 +37,31 @@ class WriteArchive @Throws(ArchiveException::class) constructor(
             Archive.writeSetBytesInLastBlock(archive, 1)
             Archive.writeSetFormat(archive, format)
             Archive.writeAddFilter(archive, filter)
-            if (password != null) {
-                require(format == Archive.FORMAT_ZIP)
+            val clampedLevel = compressionLevel.coerceIn(0, 9)
+            runCatching {
+                if (filter != Archive.FILTER_NONE) {
+                    Archive.writeSetFilterOption(
+                        archive,
+                        null,
+                        "compression-level".toByteArray(),
+                        clampedLevel.toString().toByteArray()
+                    )
+                } else {
+                    Archive.writeSetFormatOption(
+                        archive,
+                        null,
+                        "compression-level".toByteArray(),
+                        clampedLevel.toString().toByteArray()
+                    )
+                }
+            }
+            if (!password.isNullOrEmpty()) {
                 Archive.writeSetPassphrase(archive, password.toByteArray())
-                // Nautilus uses AES-256 encryption as well, as it uses gnome-autoar where
-                // autoar_compressor_step_initialize_object() sets encryption to aes256.
-                Archive.writeSetFormatOption(
-                    archive, null, "encryption".toByteArray(), "aes256".toByteArray()
-                )
+                if (format == Archive.FORMAT_ZIP) {
+                    Archive.writeSetFormatOption(
+                        archive, null, "encryption".toByteArray(), "aes256".toByteArray()
+                    )
+                }
             }
             Archive.writeOpen(
                 archive, null, null, { _, _, buffer -> channel.write(buffer) }, null

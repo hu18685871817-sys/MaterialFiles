@@ -12,6 +12,8 @@ import android.os.Bundle
 import androidx.appcompat.app.AppCompatDialogFragment
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import me.zhanghai.android.files.R
+import me.zhanghai.android.files.cloud.CloudDriveActivity
+import me.zhanghai.android.files.cloud.CloudProvider
 import me.zhanghai.android.files.file.asExternalStorageUri
 import me.zhanghai.android.files.provider.document.resolver.ExternalStorageProviderHacks
 import me.zhanghai.android.files.util.createIntent
@@ -71,6 +73,10 @@ class AddStorageDialogFragment : AppCompatDialogFragment() {
             R.string.storage_add_storage_webdav_server to
                 EditWebDavServerActivity::class.createIntent()
                     .putArgs(EditWebDavServerFragment.Args()),
+            R.string.storage_add_storage_google_drive to
+                CloudDriveActivity.createIntent(CloudProvider.GOOGLE_DRIVE),
+            R.string.storage_add_storage_onedrive to
+                CloudDriveActivity.createIntent(CloudProvider.ONEDRIVE),
         )
     }
 }

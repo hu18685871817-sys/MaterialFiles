@@ -47,6 +47,22 @@
                 app:popupTheme="?actionBarPopupTheme" />
         </FrameLayout>
 
+        <HorizontalScrollView
+            android:id="@+id/multiTabScroll"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:scrollbars="none"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp">
+
+            <LinearLayout
+                android:id="@+id/multiTabStripLayout"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:orientation="horizontal" />
+        </HorizontalScrollView>
+
         <me.zhanghai.android.files.filelist.BreadcrumbLayout
             android:id="@+id/breadcrumbLayout"
             android:layout_width="match_parent"

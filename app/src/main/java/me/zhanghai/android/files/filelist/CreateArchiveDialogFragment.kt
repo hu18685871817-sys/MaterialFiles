@@ -93,12 +93,32 @@ class CreateArchiveDialogFragment : FileNameDialogFragment() {
             R.id.sevenZRadio -> Archive.FORMAT_7ZIP to Archive.FILTER_NONE
             else -> throw AssertionError(checkedId)
         }
+        val compressionLevel = when (binding.compressionLevelGroup.checkedRadioButtonId) {
+            R.id.levelFastRadio -> 1
+            R.id.levelMaxRadio -> 9
+            else -> 6
+        }
+        // -1L means automatically split into 2 equal parts (Part1 & Part2); >0L means split by byte size; 0L means no split
+        val splitVolumeBytes = when (binding.splitVolumeGroup.checkedRadioButtonId) {
+            R.id.splitAutoTwoPartsRadio -> -1L
+            R.id.split1MbRadio -> 1024L * 1024L
+            R.id.split10MbRadio -> 10L * 1024L * 1024L
+            else -> 0L
+        }
         val password = if (isPasswordSupported) {
             binding.passwordEdit.text!!.toString().takeIfNotEmpty()
         } else {
             null
         }
-        listener.archive(args.files, name, format, filter, password)
+        listener.archive(
+            args.files,
+            name,
+            format,
+            filter,
+            password,
+            compressionLevel,
+            splitVolumeBytes
+        )
     }
 
     companion object {
@@ -115,6 +135,8 @@ class CreateArchiveDialogFragment : FileNameDialogFragment() {
         nameLayout: TextInputLayout,
         nameEdit: EditText,
         val typeGroup: RadioGroup,
+        val compressionLevelGroup: RadioGroup,
+        val splitVolumeGroup: RadioGroup,
         val passwordLayout: TextInputLayout,
         val passwordEdit: TextInputEditText
     ) : NameDialogFragment.Binding(root, nameLayout, nameEdit) {
@@ -124,14 +146,28 @@ class CreateArchiveDialogFragment : FileNameDialogFragment() {
                 val bindingRoot = binding.root
                 val nameBinding = NameDialogNameIncludeBinding.bind(bindingRoot)
                 return Binding(
-                    bindingRoot, nameBinding.nameLayout, nameBinding.nameEdit, binding.typeGroup,
-                    binding.passwordLayout, binding.passwordEdit
+                    bindingRoot,
+                    nameBinding.nameLayout,
+                    nameBinding.nameEdit,
+                    binding.typeGroup,
+                    binding.compressionLevelGroup,
+                    binding.splitVolumeGroup,
+                    binding.passwordLayout,
+                    binding.passwordEdit
                 )
             }
         }
     }
 
     interface Listener : FileNameDialogFragment.Listener {
-        fun archive(files: FileItemSet, name: String, format: Int, filter: Int, password: String?)
+        fun archive(
+            files: FileItemSet,
+            name: String,
+            format: Int,
+            filter: Int,
+            password: String?,
+            compressionLevel: Int = 6,
+            splitVolumeBytes: Long = 0L
+        )
     }
 }

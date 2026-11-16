@@ -132,6 +132,27 @@ class FileListAdapter(
         listener.selectFiles(files, true)
     }
 
+    fun selectRangeFiles(): Int {
+        if (selectedFiles.size < 2) {
+            return 0
+        }
+        val selectedPositions = selectedFiles.mapNotNull { filePositionMap[it.path] }
+        if (selectedPositions.size < 2) {
+            return 0
+        }
+        val minPos = selectedPositions.minOrNull() ?: return 0
+        val maxPos = selectedPositions.maxOrNull() ?: return 0
+        val rangeFiles = fileItemSetOf()
+        for (index in minPos..maxPos) {
+            val file = getItem(index)
+            if (isFileSelectable(file)) {
+                rangeFiles.add(file)
+            }
+        }
+        listener.selectFiles(rangeFiles, true)
+        return rangeFiles.size
+    }
+
     private fun isFileSelectable(file: FileItem): Boolean {
         val pickOptions = pickOptions ?: return true
         return when (pickOptions.mode) {

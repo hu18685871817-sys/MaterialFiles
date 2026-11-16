@@ -806,4 +806,31 @@
 
     <string name="shortcut_downloads_title" translatable="false">@string/navigation_standard_directory_downloads</string>
     <string name="shortcut_ftp_server_title" translatable="false">@string/ftp_server_title</string>
+
+    <string name="navigation_disk_analysis">Disk analysis</string>
+    <string name="navigation_media_player">Media player</string>
+    <string name="navigation_cloud_drive">Cloud drives (Google Drive / OneDrive)</string>
+    <string name="file_list_action_disk_analysis">Analyze directory space</string>
+    <string name="disk_analysis_title">Disk Analysis</string>
+    <string name="disk_analysis_total_space">Total Capacity</string>
+    <string name="disk_analysis_used_space">Used Space</string>
+    <string name="disk_analysis_free_space">Available Space</string>
+    <string name="disk_analysis_type_distribution">File Type Breakdown</string>
+    <string name="disk_analysis_folder_ranking">Folders Sorted by Size</string>
+    <string name="disk_analysis_category_image">Images</string>
+    <string name="disk_analysis_category_video">Videos</string>
+    <string name="disk_analysis_category_audio">Audio</string>
+    <string name="disk_analysis_category_document">Documents</string>
+    <string name="disk_analysis_category_apk">Packages (APK)</string>
+    <string name="disk_analysis_category_other">Archives &amp; Other</string>
+    <string name="media_player_title">Media Player</string>
+    <string name="storage_add_storage_google_drive">Google Drive</string>
+    <string name="storage_add_storage_onedrive">Microsoft OneDrive</string>
+    <string name="cloud_drive_title">Cloud Drive Explorer</string>
+    <string name="navigation_document_preview">Office &amp; Markdown Viewer</string>
+    <string name="navigation_built_in_reader">Built-in Book Reader</string>
+    <string name="navigation_archive_preview">Archive Preview &amp; Split/Encrypt</string>
+    <string name="document_preview_title">Document &amp; Markdown Studio</string>
+    <string name="built_in_reader_title">Built-in Reader</string>
+    <string name="archive_preview_title">Archive Inspector</string>
 </resources>
