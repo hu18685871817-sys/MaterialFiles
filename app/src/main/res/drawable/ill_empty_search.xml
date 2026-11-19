@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="160dp"
+    android:height="140dp"
+    android:viewportWidth="160"
+    android:viewportHeight="140">
+    <!-- Section E.2 of 视觉素材板.svg: 搜索无结果 · 没找到「季度报告」 -->
+    <path
+        android:fillColor="#6C5CE7"
+        android:fillAlpha="0.12"
+        android:pathData="M80,72 m-52,0 a52,52 0 1,0 104,0 a52,52 0 1,0 -104,0" />
+    <path
+        android:pathData="M76,68 m-19,0 a19,19 0 1,0 38,0 a19,19 0 1,0 -38,0"
+        android:strokeWidth="2.6"
+        android:strokeColor="#6C5CE7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M90,82 l16,16"
+        android:strokeWidth="2.6"
+        android:strokeColor="#6C5CE7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M68,60 l24,24"
+        android:strokeWidth="3"
+        android:strokeColor="#F0536B"
+        android:strokeLineCap="round" />
+    <path
+        android:fillColor="#F5B942"
+        android:pathData="M124,44 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" />
+</vector>

@@ -1,42 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
-
-    <!-- 3D Drop Shadow Base -->
-    <path
-        android:fillColor="#14532D"
-        android:pathData="M6.2,3.2H15.0L20.0,8.2V19.8C20.0,21.01 19.01,22 17.8,22H6.2C4.99,22 4.0,21.01 4.0,19.8V5.4C4.0,4.19 4.99,3.2 6.2,3.2Z" />
-
-    <!-- Main 3D Emerald Spreadsheet Page Body -->
-    <path
-        android:fillColor="#16A34A"
-        android:pathData="M5.8,2H14.6L19.6,7V18.8C19.6,20.01 18.61,21 17.4,21H5.8C4.59,21 3.6,20.01 3.6,18.8V4.2C3.6,2.99 4.59,2 5.8,2Z" />
-
-    <!-- Lower Shading Band -->
-    <path
-        android:fillColor="#15803D"
-        android:pathData="M3.6,13.5H19.6V18.8C19.6,20.01 18.61,21 17.4,21H5.8C4.59,21 3.6,20.01 3.6,18.8V13.5Z" />
-
-    <!-- Folded Top-Right Dog-Ear Flap -->
-    <path
-        android:fillColor="#86EFAC"
-        android:pathData="M14.6,2L19.6,7H15.9C15.18,7 14.6,6.42 14.6,5.7V2Z" />
-
-    <!-- Spreadsheet Cells Grid -->
-    <path
-        android:fillColor="#DCFCE7"
-        android:pathData="M6.2,6.5H11.0V8.3H6.2V6.5ZM12.0,6.5H16.8V8.3H12.0V6.5ZM6.2,9.2H11.0V11.0H6.2V9.2ZM12.0,9.2H16.8V11.0H12.0V9.2ZM6.2,11.9H11.0V13.5H6.2V11.9ZM12.0,11.9H16.8V13.5H12.0V11.9Z" />
-
-    <!-- White Pill Badge with Bold 'X' -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <!-- Section D.7 of 视觉素材板.svg: sheet (#22C58B, 16% tint, 1.75px linear) -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M5.4,14.4H17.8C18.3,14.4 18.7,14.8 18.7,15.3V18.2C18.7,18.7 18.3,19.1 17.8,19.1H5.4C4.9,19.1 4.5,18.7 4.5,18.2V15.3C4.5,14.8 4.9,14.4 5.4,14.4Z" />
-
+        android:pathData="M12,0 L52,0 A12,12 0 0,1 64,12 L64,52 A12,12 0 0,1 52,64 L12,64 A12,12 0 0,1 0,52 L0,12 A12,12 0 0,1 12,0 Z" />
     <path
-        android:fillColor="#15803D"
-        android:pathData="M9.4,15.0L11.0,16.75L9.3,18.5H10.5L11.6,17.3L12.7,18.5H13.9L12.2,16.75L13.8,15.0H12.6L11.6,16.15L10.6,15.0H9.4Z" />
+        android:fillColor="#22C58B"
+        android:fillAlpha="0.16"
+        android:pathData="M12,0 L52,0 A12,12 0 0,1 64,12 L64,52 A12,12 0 0,1 52,64 L12,64 A12,12 0 0,1 0,52 L0,12 A12,12 0 0,1 12,0 Z" />
+    <group
+        android:translateX="16"
+        android:translateY="16">
+        <path
+            android:pathData="M7,4 L25,4 A3,3 0 0,1 28,7 L28,25 A3,3 0 0,1 25,28 L7,28 A3,3 0 0,1 4,25 L4,7 A3,3 0 0,1 7,4 Z"
+            android:strokeWidth="1.75"
+            android:strokeColor="#22C58B"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M4,12 h24 M4,20 h24 M12,4 v24 M20,4 v24"
+            android:strokeWidth="1.75"
+            android:strokeColor="#22C58B"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
 </vector>

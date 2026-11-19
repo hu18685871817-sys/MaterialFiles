@@ -1,24 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
-
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <!-- Section D.12 of 视觉素材板.svg: file (#7C86B8, 16% tint, 1.75px linear) -->
     <path
-        android:fillColor="#64748B"
-        android:pathData="M6.2,3.2H15.0L20.0,8.2V19.8C20.0,21.01 19.01,22 17.8,22H6.2C4.99,22 4.0,21.01 4.0,19.8V5.4C4.0,4.19 4.99,3.2 6.2,3.2Z" />
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,0 L52,0 A12,12 0 0,1 64,12 L64,52 A12,12 0 0,1 52,64 L12,64 A12,12 0 0,1 0,52 L0,12 A12,12 0 0,1 12,0 Z" />
     <path
-        android:fillColor="#F1F5F9"
-        android:pathData="M5.8,2H14.6L19.6,7V18.8C19.6,20.01 18.61,21 17.4,21H5.8C4.59,21 3.6,20.01 3.6,18.8V4.2C3.6,2.99 4.59,2 5.8,2Z" />
-    <path
-        android:fillColor="#E2E8F0"
-        android:pathData="M3.6,13.5H19.6V18.8C19.6,20.01 18.61,21 17.4,21H5.8C4.59,21 3.6,20.01 3.6,18.8V13.5Z" />
-    <path
-        android:fillColor="#94A3B8"
-        android:pathData="M14.6,2L19.6,7H15.9C15.18,7 14.6,6.42 14.6,5.7V2Z" />
-    <path
-        android:fillColor="#64748B"
-        android:pathData="M7.2,10.2H16.0V11.6H7.2V10.2ZM7.2,13.2H14.0V14.6H7.2V13.2Z" />
+        android:fillColor="#7C86B8"
+        android:fillAlpha="0.16"
+        android:pathData="M12,0 L52,0 A12,12 0 0,1 64,12 L64,52 A12,12 0 0,1 52,64 L12,64 A12,12 0 0,1 0,52 L0,12 A12,12 0 0,1 12,0 Z" />
+    <group
+        android:translateX="16"
+        android:translateY="16">
+        <path
+            android:pathData="M9,3 h10 l6,6 v19 a2,2 0 0,1 -2,2 H9 a2,2 0 0,1 -2,-2 V5 a2,2 0 0,1 2,-2 z M19,3 v6 h6"
+            android:strokeWidth="1.75"
+            android:strokeColor="#7C86B8"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
 </vector>

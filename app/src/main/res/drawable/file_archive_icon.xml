@@ -1,38 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
-
-    <!-- 3D Drop Shadow Base -->
-    <path
-        android:fillColor="#78350F"
-        android:pathData="M5.2,3.4H18.8C20.01,3.4 21.0,4.39 21.0,5.6V19.4C21.0,20.61 20.01,21.6 18.8,21.6H5.2C3.99,21.6 3.0,20.61 3.0,19.4V5.6C3.0,4.39 3.99,3.4 5.2,3.4Z" />
-
-    <!-- Main 3D Amber Archive Box -->
-    <path
-        android:fillColor="#F59E0B"
-        android:pathData="M5.2,2.4H18.8C20.01,2.4 21.0,3.39 21.0,4.6V18.4C21.0,19.61 20.01,20.6 18.8,20.6H5.2C3.99,20.6 3.0,19.61 3.0,18.4V4.6C3.0,3.39 3.99,2.4 5.2,2.4Z" />
-
-    <!-- Lower Depth Band -->
-    <path
-        android:fillColor="#D97706"
-        android:pathData="M3.0,12.0H21.0V18.4C21.0,19.61 20.01,20.6 18.8,20.6H5.2C3.99,20.6 3.0,19.61 3.0,18.4V12.0Z" />
-
-    <!-- Vertical Zipper Track -->
-    <path
-        android:fillColor="#78350F"
-        android:pathData="M10.4,2.4H13.6V15.5H10.4V2.4Z" />
-
-    <!-- Alternating Metallic Zipper Teeth -->
-    <path
-        android:fillColor="#FEF3C7"
-        android:pathData="M10.6,3.4H12.0V4.8H10.6V3.4ZM12.0,5.0H13.4V6.4H12.0V5.0ZM10.6,6.6H12.0V8.0H10.6V6.6ZM12.0,8.2H13.4V9.6H12.0V8.2ZM10.6,9.8H12.0V11.2H10.6V9.8Z" />
-
-    <!-- Zipper Pull Clasp -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <!-- Section D.9 of 视觉素材板.svg: zip (#7C86B8, 16% tint, 1.75px linear) -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M9.8,12.2H14.2C14.75,12.2 15.2,12.65 15.2,13.2V16.8C15.2,17.35 14.75,17.8 14.2,17.8H9.8C9.25,17.8 8.8,17.35 8.8,16.8V13.2C8.8,12.65 9.25,12.2 9.8,12.2ZM11.0,14.2V16.0H13.0V14.2H11.0Z" />
+        android:pathData="M12,0 L52,0 A12,12 0 0,1 64,12 L64,52 A12,12 0 0,1 52,64 L12,64 A12,12 0 0,1 0,52 L0,12 A12,12 0 0,1 12,0 Z" />
+    <path
+        android:fillColor="#7C86B8"
+        android:fillAlpha="0.16"
+        android:pathData="M12,0 L52,0 A12,12 0 0,1 64,12 L64,52 A12,12 0 0,1 52,64 L12,64 A12,12 0 0,1 0,52 L0,12 A12,12 0 0,1 12,0 Z" />
+    <group
+        android:translateX="16"
+        android:translateY="16">
+        <path
+            android:pathData="M7,4 L25,4 A3,3 0 0,1 28,7 L28,25 A3,3 0 0,1 25,28 L7,28 A3,3 0 0,1 4,25 L4,7 A3,3 0 0,1 7,4 Z"
+            android:strokeWidth="1.75"
+            android:strokeColor="#7C86B8"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M4,11 h24 M13,4 v24 M19,4 v24"
+            android:strokeWidth="1.75"
+            android:strokeColor="#7C86B8"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M14,16 L18,16 A1,1 0 0,1 19,17 L19,21 A1,1 0 0,1 18,22 L14,22 A1,1 0 0,1 13,21 L13,17 A1,1 0 0,1 14,16 Z"
+            android:strokeWidth="1.75"
+            android:strokeColor="#7C86B8"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
 </vector>

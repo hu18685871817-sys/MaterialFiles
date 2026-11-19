@@ -185,9 +185,12 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
 
     private lateinit var adapter: FileListAdapter
 
-    private var isHomeDashboardActive: Boolean = false
+    private var isHomeDashboardActive: Boolean = true
+    private var activeBottomTab: Int = me.zhanghai.android.files.home.EsHomeDashboardView.TAB_HOME
+    private var activeSortFilterState = me.zhanghai.android.files.ui.BrightCalmPanels.SortFilterState()
     private val folderTabs = mutableListOf<Path>()
     private var activeFolderTabIndex: Int = 0
+    private var returnToHomeCallback: OnBackPressedCallback? = null
 
     private val debouncedSearchRunnable = DebouncedRunnable(Handler(Looper.getMainLooper()), 1000) {
         if (!isResumed || !viewModel.isSearchViewExpanded) {
@@ -245,6 +248,34 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
         binding.homeDashboardView.onNavigateToFolder = { targetPath ->
             switchToFolderTab(targetPath)
         }
+        binding.homeDashboardView.onOpenGlobalSearch = {
+            val scopeDir = if (!isHomeDashboardActive && currentPath.isLinuxPath) {
+                currentPath.toFile()
+            } else {
+                null
+            }
+            me.zhanghai.android.files.ui.BrightCalmPanels.showGlobalSearchOverlay(
+                requireContext(),
+                scopeDir
+            ) { selectedFile ->
+                val targetPath = Paths.get(selectedFile.absolutePath)
+                if (selectedFile.isDirectory) {
+                    switchToFolderTab(targetPath)
+                } else {
+                    selectedFile.parentFile?.let { parent ->
+                        switchToFolderTab(Paths.get(parent.absolutePath))
+                    }
+                }
+            }
+        }
+        binding.homeDashboardView.onSwitchTabRequest = { targetTab ->
+            activeBottomTab = targetTab
+            isHomeDashboardActive = true
+            binding.homeDashboardView.switchTab(targetTab)
+            updateHomeDashboardVisibility()
+            renderBottomNavigationBar()
+            renderMultiTabStrip()
+        }
         if (folderTabs.isEmpty()) {
             val rootPath = Paths.get(Environment.getExternalStorageDirectory().absolutePath)
             val downloadPath = Paths.get(
@@ -253,7 +284,6 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
             folderTabs.add(rootPath)
             folderTabs.add(downloadPath)
         }
-        renderMultiTabStrip()
         if (!(activity.hasSw600Dp && activity.isOrientationLandscape)) {
             binding.swipeRefreshLayout.setProgressViewEndTarget(
                 true, binding.swipeRefreshLayout.progressViewEndOffset
@@ -274,25 +304,32 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
                 R.id.action_create_file -> showCreateFileDialog()
                 R.id.action_create_directory -> showCreateDirectoryDialog()
             }
-            // Returning false causes the speed dial to close without animation.
-            //return false
             binding.speedDialView.close()
             true
         }
+        binding.emptyView.setOnClickListener {
+            showCreateDirectoryDialog()
+        }
 
         val viewLifecycleOwner = viewLifecycleOwner
-        addOnBackPressedCallback(
-            object : OnBackPressedCallback(false) {
-                override fun handleOnBackPressed() {
+        returnToHomeCallback = object : OnBackPressedCallback(false) {
+            override fun handleOnBackPressed() {
+                if (viewModel.canNavigateUpBreadcrumb) {
                     viewModel.navigateUp()
+                } else if (!isHomeDashboardActive && viewModel.pickOptions == null) {
+                    isHomeDashboardActive = true
+                    updateHomeDashboardVisibility()
+                    renderBottomNavigationBar()
+                    renderMultiTabStrip()
                 }
             }
-                .also { callback ->
-                    viewModel.breadcrumbLiveData.observe(viewLifecycleOwner) {
-                        callback.isEnabled = viewModel.canNavigateUpBreadcrumb
-                    }
-                }
-        )
+        }.also { callback ->
+            addOnBackPressedCallback(callback)
+            viewModel.breadcrumbLiveData.observe(viewLifecycleOwner) {
+                callback.isEnabled = viewModel.canNavigateUpBreadcrumb ||
+                    (!isHomeDashboardActive && viewModel.pickOptions == null)
+            }
+        }
         addOnBackPressedCallback(overlayActionMode.onBackPressedCallback)
         addOnBackPressedCallback(SpeedDialViewOnBackPressedCallback(binding.speedDialView))
         binding.drawerLayout?.let {
@@ -352,6 +389,9 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
                         }
                     }
             }
+            if (path != null || pickOptions != null) {
+                isHomeDashboardActive = false
+            }
             if (path == null) {
                 path = Settings.FILE_LIST_DEFAULT_DIRECTORY.valueCompat
             }
@@ -360,6 +400,9 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
                 viewModel.pickOptions = pickOptions
             }
         }
+        updateHomeDashboardVisibility()
+        renderBottomNavigationBar()
+        renderMultiTabStrip()
         viewModel.currentPathLiveData.observe(viewLifecycleOwner) { onCurrentPathChanged(it) }
         viewModel.searchViewExpandedLiveData.observe(viewLifecycleOwner) {
             onSearchViewExpandedChanged(it)
@@ -368,9 +411,6 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
             binding.breadcrumbLayout.setData(it)
         }
         viewModel.viewTypeLiveData.observe(viewLifecycleOwner) { onViewTypeChanged(it) }
-        // Live data only calls observeForever() on its sources when it is active, so we have to
-        // make view type live data active first (so that it can load its initial value) before we
-        // register another observer that needs to get the view type.
         if (binding.persistentDrawerLayout != null) {
             Settings.FILE_LIST_PERSISTENT_DRAWER_OPEN.observe(viewLifecycleOwner) {
                 onPersistentDrawerOpenChanged(it)
@@ -657,14 +697,27 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
         }
         updateHomeDashboardVisibility()
         viewModel.resetTo(path)
+        renderBottomNavigationBar()
         renderMultiTabStrip()
     }
 
     private fun updateHomeDashboardVisibility() {
+        val ctx = context ?: return
+        val t = me.zhanghai.android.files.ui.BrightCalmTheme.of(ctx)
+        binding.contentLayout.setBackgroundColor(t.background)
+        binding.appBarLayout.setBackgroundColor(t.card)
+        binding.toolbar.setBackgroundColor(t.card)
+        binding.toolbar.setTitleTextColor(t.foreground)
+        binding.toolbar.setSubtitleTextColor(t.mutedForeground)
+
         binding.homeDashboardView.isVisible = isHomeDashboardActive
         binding.swipeRefreshLayout.isVisible = !isHomeDashboardActive
         binding.breadcrumbLayout.isVisible = !isHomeDashboardActive
+        binding.appBarLayout.isVisible = !isHomeDashboardActive
         binding.speedDialView.isVisible = !isHomeDashboardActive
+        returnToHomeCallback?.isEnabled = viewModel.canNavigateUpBreadcrumb ||
+            (!isHomeDashboardActive && viewModel.pickOptions == null)
+
         if (isHomeDashboardActive) {
             binding.emptyView.isVisible = false
             binding.errorText.isVisible = false
@@ -673,28 +726,176 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
         }
     }
 
-    private fun renderMultiTabStrip() {
-        val strip = binding.multiTabStripLayout
-        strip.removeAllViews()
-        val ctx = requireContext()
+    private fun renderBottomNavigationBar() {
+        val container = binding.brightCalmBottomNavContainer
+        container.removeAllViews()
+        val ctx = context ?: return
+        val t = me.zhanghai.android.files.ui.BrightCalmTheme.of(ctx)
         val density = resources.displayMetrics.density
         fun dp(v: Int): Int = (v * density).toInt()
 
-        // 1. Pinned Home Dashboard Tab (🏠 主页看板)
-        val homeTab = TextView(ctx).apply {
-            text = "🏠 主页看板"
-            textSize = 12f
-            setTypeface(null, if (isHomeDashboardActive) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
-            setTextColor(
-                if (isHomeDashboardActive) android.graphics.Color.WHITE
-                else android.graphics.Color.parseColor("#334155")
+        val hideNav = viewModel.selectedFiles.isNotEmpty() || viewModel.pickOptions != null
+        container.isVisible = !hideNav
+        val bottomMarginPx = if (hideNav) 0 else dp(64)
+        (binding.swipeRefreshLayout.layoutParams as? ViewGroup.MarginLayoutParams)?.let { lp ->
+            if (lp.bottomMargin != bottomMarginPx) {
+                lp.bottomMargin = bottomMarginPx
+                binding.swipeRefreshLayout.layoutParams = lp
+            }
+        }
+        (binding.homeDashboardView.layoutParams as? ViewGroup.MarginLayoutParams)?.let { lp ->
+            if (lp.bottomMargin != bottomMarginPx) {
+                lp.bottomMargin = bottomMarginPx
+                binding.homeDashboardView.layoutParams = lp
+            }
+        }
+        if (hideNav) return
+
+        container.setBackgroundColor(t.card)
+
+        // 1px top border (--border) without shadow or blur (§4.2)
+        container.addView(View(ctx).apply {
+            setBackgroundColor(t.border)
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                1
             )
-            background = android.graphics.drawable.GradientDrawable().apply {
-                cornerRadius = dp(14).toFloat()
-                setColor(
-                    if (isHomeDashboardActive) android.graphics.Color.parseColor("#2563EB")
-                    else android.graphics.Color.parseColor("#E2E8F0")
+        })
+
+        val row = android.widget.LinearLayout(ctx).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        }
+
+        data class NavTab(val index: Int, val label: String, val iconKind: String)
+        val navTabs = listOf(
+            NavTab(me.zhanghai.android.files.home.EsHomeDashboardView.TAB_HOME, "首页", "home"),
+            NavTab(me.zhanghai.android.files.home.EsHomeDashboardView.TAB_RECENT, "最近", "clock"),
+            NavTab(me.zhanghai.android.files.home.EsHomeDashboardView.TAB_CATEGORY, "分类", "grid"),
+            NavTab(me.zhanghai.android.files.home.EsHomeDashboardView.TAB_SETTINGS, "设置", "settings")
+        )
+
+        navTabs.forEach { tab ->
+            val selected = isHomeDashboardActive && activeBottomTab == tab.index
+            val itemCol = android.widget.LinearLayout(ctx).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                gravity = android.view.Gravity.CENTER_HORIZONTAL
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    0,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    1f
                 )
+            }
+
+            // Top 2dp primary active indicator bar (§4.2)
+            itemCol.addView(View(ctx).apply {
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = dp(2).toFloat()
+                    setColor(if (selected) t.primary else android.graphics.Color.TRANSPARENT)
+                }
+                layoutParams = android.widget.LinearLayout.LayoutParams(dp(24), dp(2)).apply {
+                    bottomMargin = dp(8)
+                }
+            })
+
+            val iconColor = if (selected) t.primary else t.mutedForeground
+            itemCol.addView(
+                me.zhanghai.android.files.ui.BrightCalmTheme.createLinearIcon(
+                    ctx,
+                    tab.iconKind,
+                    iconColor,
+                    22
+                )
+            )
+
+            itemCol.addView(TextView(ctx).apply {
+                text = tab.label
+                textSize = 11f
+                setTypeface(
+                    null,
+                    if (selected) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL
+                )
+                setTextColor(iconColor)
+                setPadding(0, dp(3), 0, 0)
+            })
+
+            itemCol.setOnClickListener {
+                if (isHomeDashboardActive && activeBottomTab == tab.index) {
+                    // Tap active tab again -> smooth scroll current tab to top
+                    binding.homeDashboardView.switchTab(tab.index)
+                } else {
+                    activeBottomTab = tab.index
+                    isHomeDashboardActive = true
+                    binding.homeDashboardView.switchTab(tab.index)
+                    updateHomeDashboardVisibility()
+                    renderBottomNavigationBar()
+                    renderMultiTabStrip()
+                }
+            }
+            row.addView(itemCol)
+        }
+        container.addView(row)
+    }
+
+    private fun openSortAndFilterSheet() {
+        val ctx = context ?: return
+        val allFiles = (viewModel.fileListStateful.value ?: emptyList()).mapNotNull {
+            runCatching { it.path.toFile() }.getOrNull()
+        }
+        val curSort = viewModel.sortOptions
+        activeSortFilterState = activeSortFilterState.copy(
+            sortField = when (curSort.by) {
+                By.NAME -> me.zhanghai.android.files.ui.BrightCalmPanels.SortField.NAME
+                By.SIZE -> me.zhanghai.android.files.ui.BrightCalmPanels.SortField.SIZE
+                By.TYPE -> me.zhanghai.android.files.ui.BrightCalmPanels.SortField.TYPE
+                By.LAST_MODIFIED -> me.zhanghai.android.files.ui.BrightCalmPanels.SortField.MODIFIED
+            },
+            ascending = curSort.order == Order.ASCENDING
+        )
+        me.zhanghai.android.files.ui.BrightCalmPanels.showSortAndFilterSheet(
+            context = ctx,
+            initialState = activeSortFilterState,
+            allCandidateFiles = allFiles
+        ) { newState ->
+            activeSortFilterState = newState
+            val targetBy = when (newState.sortField) {
+                me.zhanghai.android.files.ui.BrightCalmPanels.SortField.NAME -> By.NAME
+                me.zhanghai.android.files.ui.BrightCalmPanels.SortField.SIZE -> By.SIZE
+                me.zhanghai.android.files.ui.BrightCalmPanels.SortField.TYPE -> By.TYPE
+                me.zhanghai.android.files.ui.BrightCalmPanels.SortField.MODIFIED -> By.LAST_MODIFIED
+            }
+            val targetOrder = if (newState.ascending) Order.ASCENDING else Order.DESCENDING
+            viewModel.setSortBy(targetBy)
+            viewModel.setSortOrder(targetOrder)
+            updateAdapterFileList()
+            renderMultiTabStrip()
+        }
+    }
+
+    private fun renderMultiTabStrip() {
+        val strip = binding.multiTabStripLayout
+        strip.removeAllViews()
+        val ctx = context ?: return
+        val t = me.zhanghai.android.files.ui.BrightCalmTheme.of(ctx)
+        val density = resources.displayMetrics.density
+        fun dp(v: Int): Int = (v * density).toInt()
+
+        (strip.parent as? View)?.setBackgroundColor(t.card)
+
+        // 1. Back to Home Tab pill
+        val backHomeChip = TextView(ctx).apply {
+            text = "← 首页"
+            textSize = 12f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(t.primary)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = dp(999).toFloat()
+                setColor(me.zhanghai.android.files.ui.BrightCalmTheme.withAlpha(t.primary, 0.12f))
             }
             setPadding(dp(12), dp(5), dp(12), dp(5))
             layoutParams = android.widget.LinearLayout.LayoutParams(
@@ -704,12 +905,100 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
             setOnClickListener {
                 isHomeDashboardActive = true
                 updateHomeDashboardVisibility()
+                renderBottomNavigationBar()
                 renderMultiTabStrip()
             }
         }
-        strip.addView(homeTab)
+        strip.addView(backHomeChip)
 
-        // 2. Open Folder Tabs
+        // 2. Sort Chip (§5.4: [按修改时间 ↓])
+        val sortOpts = viewModel.sortOptionsLiveData.value
+        val sortByLabel = when (sortOpts?.by) {
+            By.NAME -> "按名称"
+            By.SIZE -> "按大小"
+            By.TYPE -> "按类型"
+            else -> "按修改时间"
+        }
+        val arrow = if (sortOpts?.order == Order.ASCENDING) "↑" else "↓"
+        val sortChip = TextView(ctx).apply {
+            text = "$sortByLabel $arrow"
+            textSize = 12f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(t.foreground)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = dp(999).toFloat()
+                setColor(t.muted)
+            }
+            setPadding(dp(12), dp(5), dp(12), dp(5))
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { rightMargin = dp(6) }
+            setOnClickListener {
+                openSortAndFilterSheet()
+            }
+        }
+        strip.addView(sortChip)
+
+        // 3. Filter Chip (§5.4: [类型筛选] or [已筛选 · 清除 ×])
+        val hasFilter = activeSortFilterState.hasActiveFilter()
+        val filterChip = TextView(ctx).apply {
+            text = if (hasFilter) "已筛选 · 清除 ×" else "筛选 ▾"
+            textSize = 12f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(if (hasFilter) t.primary else t.foreground)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = dp(999).toFloat()
+                setColor(
+                    if (hasFilter) me.zhanghai.android.files.ui.BrightCalmTheme.withAlpha(t.primary, 0.14f)
+                    else t.muted
+                )
+            }
+            setPadding(dp(12), dp(5), dp(12), dp(5))
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { rightMargin = dp(6) }
+            setOnClickListener {
+                if (hasFilter) {
+                    activeSortFilterState = activeSortFilterState.copy(
+                        selectedKinds = emptySet(),
+                        timeRange = me.zhanghai.android.files.ui.BrightCalmPanels.TimeRange.ALL,
+                        sizeRange = me.zhanghai.android.files.ui.BrightCalmPanels.SizeRange.ALL
+                    )
+                    updateAdapterFileList()
+                    renderMultiTabStrip()
+                } else {
+                    openSortAndFilterSheet()
+                }
+            }
+        }
+        strip.addView(filterChip)
+
+        // 4. View Switcher Chip ([列表 / 网格])
+        val isGrid = currentViewTypeSafe == FileViewType.GRID
+        val cols = getPreferredGridColumns()
+        val layoutChip = TextView(ctx).apply {
+            text = if (isGrid) "网格 ${cols}列 ▾" else "列表 ▾"
+            textSize = 12f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(t.foreground)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = dp(999).toFloat()
+                setColor(t.muted)
+            }
+            setPadding(dp(12), dp(5), dp(12), dp(5))
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { rightMargin = dp(6) }
+            setOnClickListener {
+                showGridArrangementDialog()
+            }
+        }
+        strip.addView(layoutChip)
+
+        // 5. Open Folder Tabs
         folderTabs.forEachIndexed { idx, tabPath ->
             val selected = !isHomeDashboardActive && idx == activeFolderTabIndex
             val folderName = tabPath.fileName?.toString()?.takeIf { it.isNotEmpty() } ?: "内部存储"
@@ -719,10 +1008,10 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
                 orientation = android.widget.LinearLayout.HORIZONTAL
                 gravity = android.view.Gravity.CENTER_VERTICAL
                 background = android.graphics.drawable.GradientDrawable().apply {
-                    cornerRadius = dp(14).toFloat()
+                    cornerRadius = dp(999).toFloat()
                     setColor(
-                        if (selected) android.graphics.Color.parseColor("#2563EB")
-                        else android.graphics.Color.parseColor("#E2E8F0")
+                        if (selected) me.zhanghai.android.files.ui.BrightCalmTheme.withAlpha(t.primary, 0.14f)
+                        else t.muted
                     )
                 }
                 setPadding(dp(10), dp(4), dp(8), dp(4))
@@ -737,19 +1026,17 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
                     if (viewModel.currentPath != tabPath) {
                         viewModel.resetTo(tabPath)
                     }
+                    renderBottomNavigationBar()
                     renderMultiTabStrip()
                 }
             }
 
             val labelTv = TextView(ctx).apply {
-                text = "📁 $displayLabel"
+                text = displayLabel
                 textSize = 12f
                 maxLines = 1
                 setTypeface(null, if (selected) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
-                setTextColor(
-                    if (selected) android.graphics.Color.WHITE
-                    else android.graphics.Color.parseColor("#334155")
-                )
+                setTextColor(if (selected) t.primary else t.foreground)
             }
             tabChip.addView(labelTv)
 
@@ -758,10 +1045,7 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
                     text = " ×"
                     textSize = 13f
                     setTypeface(null, android.graphics.Typeface.BOLD)
-                    setTextColor(
-                        if (selected) android.graphics.Color.WHITE
-                        else android.graphics.Color.parseColor("#64748B")
-                    )
+                    setTextColor(if (selected) t.primary else t.mutedForeground)
                     setPadding(dp(4), 0, dp(2), 0)
                     setOnClickListener {
                         folderTabs.removeAt(idx)
@@ -778,56 +1062,6 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
             }
 
             strip.addView(tabChip)
-        }
-
-        // 3. [ + ] Add New Folder Tab button
-        val addTabBtn = TextView(ctx).apply {
-            text = "＋ 新建标签"
-            textSize = 11f
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            setTextColor(android.graphics.Color.parseColor("#2563EB"))
-            background = android.graphics.drawable.GradientDrawable().apply {
-                cornerRadius = dp(14).toFloat()
-                setColor(android.graphics.Color.parseColor("#EFF6FF"))
-                setStroke(dp(1), android.graphics.Color.parseColor("#BFDBFE"))
-            }
-            setPadding(dp(10), dp(4), dp(10), dp(4))
-            setOnClickListener {
-                val defaultRoot = Paths.get(Environment.getExternalStorageDirectory().absolutePath)
-                folderTabs.add(defaultRoot)
-                isHomeDashboardActive = false
-                activeFolderTabIndex = folderTabs.lastIndex
-                updateHomeDashboardVisibility()
-                viewModel.resetTo(defaultRoot)
-                renderMultiTabStrip()
-            }
-        }
-        strip.addView(addTabBtn)
-
-        // 4. [ ⊞ 排布 ] Quick View & Grid Column Arrangement Switcher Pill
-        if (!isHomeDashboardActive) {
-            val isGrid = currentViewTypeSafe == FileViewType.GRID
-            val cols = getPreferredGridColumns()
-            val layoutChip = TextView(ctx).apply {
-                text = if (isGrid) "⊞ 网格 ${cols}列 ▾" else "☰ 列表视图 ▾"
-                textSize = 11f
-                setTypeface(null, android.graphics.Typeface.BOLD)
-                setTextColor(android.graphics.Color.parseColor("#0F766E"))
-                background = android.graphics.drawable.GradientDrawable().apply {
-                    cornerRadius = dp(14).toFloat()
-                    setColor(android.graphics.Color.parseColor("#F0FDFA"))
-                    setStroke(dp(1), android.graphics.Color.parseColor("#99F6E4"))
-                }
-                setPadding(dp(10), dp(4), dp(10), dp(4))
-                layoutParams = android.widget.LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                ).apply { leftMargin = dp(6) }
-                setOnClickListener {
-                    showGridArrangementDialog()
-                }
-            }
-            strip.addView(layoutChip)
         }
     }
 

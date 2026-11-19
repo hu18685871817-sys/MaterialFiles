@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="160dp"
+    android:height="140dp"
+    android:viewportWidth="160"
+    android:viewportHeight="140">
+    <!-- Section E.3 of 视觉素材板.svg: 无权限 · 需要访问文件的权限 -->
+    <path
+        android:fillColor="#6C5CE7"
+        android:fillAlpha="0.12"
+        android:pathData="M80,72 m-52,0 a52,52 0 1,0 104,0 a52,52 0 1,0 -104,0" />
+    <path
+        android:pathData="M67,70 L93,70 A5,5 0 0,1 98,75 L98,91 A5,5 0 0,1 93,96 L67,96 A5,5 0 0,1 62,91 L62,75 A5,5 0 0,1 67,70 Z"
+        android:strokeWidth="2.6"
+        android:strokeColor="#6C5CE7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M69,70 v-8 a11,11 0 0,1 22,0 v8"
+        android:strokeWidth="2.6"
+        android:strokeColor="#6C5CE7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:fillColor="#F5B942"
+        android:pathData="M80,83 m-4,0 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0" />
+    <path
+        android:fillColor="#22C58B"
+        android:pathData="M48,44 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" />
+</vector>

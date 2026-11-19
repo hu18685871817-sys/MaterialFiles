@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="160dp"
+    android:height="140dp"
+    android:viewportWidth="160"
+    android:viewportHeight="140">
+    <!-- Section E.1 of 视觉素材板.svg: 空目录 · 这个文件夹还是空的 -->
+    <path
+        android:fillColor="#6C5CE7"
+        android:fillAlpha="0.12"
+        android:pathData="M80,72 m-52,0 a52,52 0 1,0 104,0 a52,52 0 1,0 -104,0" />
+    <group
+        android:translateX="46"
+        android:translateY="54">
+        <path
+            android:pathData="M2,14 h18 l6,6 h34 a2,2 0 0,1 2,2 v18 a2,2 0 0,1 -2,2 H4 a2,2 0 0,1 -2,-2 z"
+            android:strokeWidth="2.6"
+            android:strokeColor="#6C5CE7"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
+    <path
+        android:fillColor="#F5B942"
+        android:pathData="M60,32 L72,32 A2,2 0 0,1 74,34 L74,41 A2,2 0 0,1 72,43 L60,43 A2,2 0 0,1 58,41 L58,34 A2,2 0 0,1 60,32 Z" />
+    <path
+        android:fillColor="#FF7A59"
+        android:pathData="M80,28 L90,28 A2,2 0 0,1 92,30 L92,36 A2,2 0 0,1 90,38 L80,38 A2,2 0 0,1 78,36 L78,30 A2,2 0 0,1 80,28 Z" />
+    <path
+        android:fillColor="#3B9BFF"
+        android:pathData="M98,33 L106,33 A2,2 0 0,1 108,35 L108,40 A2,2 0 0,1 106,42 L98,42 A2,2 0 0,1 96,40 L96,35 A2,2 0 0,1 98,33 Z" />
+</vector>

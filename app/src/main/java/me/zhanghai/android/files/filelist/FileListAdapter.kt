@@ -5,7 +5,10 @@
 
 package me.zhanghai.android.files.filelist
 
+import android.graphics.Color
+import android.graphics.Typeface
 import android.text.TextUtils
+import android.util.TypedValue
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageButton
@@ -17,6 +20,7 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import coil.dispose
 import coil.load
+import java.util.Locale
 import java8.nio.file.Path
 import me.zhanghai.android.fastscroll.PopupTextProvider
 import me.zhanghai.android.files.R
@@ -35,12 +39,13 @@ import me.zhanghai.android.files.provider.archive.isArchivePath
 import me.zhanghai.android.files.provider.common.isEncrypted
 import me.zhanghai.android.files.settings.Settings
 import me.zhanghai.android.files.ui.AnimatedListAdapter
+import me.zhanghai.android.files.ui.BrightCalmTheme
+import me.zhanghai.android.files.ui.BrightCalmTheme.applyTabularNums
 import me.zhanghai.android.files.ui.CheckableForegroundLinearLayout
 import me.zhanghai.android.files.ui.CheckableItemBackground
 import me.zhanghai.android.files.util.isMaterial3Theme
 import me.zhanghai.android.files.util.layoutInflater
 import me.zhanghai.android.files.util.valueCompat
-import java.util.Locale
 
 class FileListAdapter(
     private val listener: Listener
@@ -242,6 +247,8 @@ class FileListAdapter(
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int, payloads: List<Any>) {
         val file = getItem(position)
+        val context = holder.itemLayout.context
+        val t = BrightCalmTheme.of(context)
         val isDirectory = file.attributes.isDirectory
         val isEnabled = isFileSelectable(file) || isDirectory
         holder.itemLayout.isEnabled = isEnabled
@@ -254,6 +261,37 @@ class FileListAdapter(
         menu.findItem(R.id.action_copy).isVisible = !hasPickOptions
         val checked = file in selectedFiles
         holder.itemLayout.isChecked = checked
+
+        // Apply Bright Calm v1.1 row styling (§5.4)
+        val isList = !this::_viewType.isInitialized || _viewType == FileViewType.LIST
+        if (isList) {
+            val compact = BrightCalmTheme.isCompactList(context)
+            val density = context.resources.displayMetrics.density
+            val targetHeightPx = ((if (compact) 48 else 64) * density).toInt()
+            val lp = holder.itemLayout.layoutParams
+            if (lp != null && lp.height != targetHeightPx) {
+                lp.height = targetHeightPx
+                holder.itemLayout.layoutParams = lp
+            }
+            holder.itemLayout.setBackgroundColor(
+                if (checked) BrightCalmTheme.withAlpha(t.primary, 0.08f) else t.card
+            )
+            holder.selectedBarView?.apply {
+                setBackgroundColor(t.primary)
+                visibility = if (checked) View.VISIBLE else View.INVISIBLE
+            }
+            holder.bottomDividerView?.apply {
+                setBackgroundColor(t.border)
+                visibility = if (position == itemCount - 1) View.INVISIBLE else View.VISIBLE
+            }
+        }
+        holder.nameText.setTextColor(t.foreground)
+        holder.nameText.setTypeface(null, Typeface.BOLD)
+        holder.descriptionText?.apply {
+            setTextColor(t.mutedForeground)
+            applyTabularNums()
+        }
+
         holder.nameText.apply {
             if (isSingleLineCompat) {
                 val nameEllipsize = nameEllipsize
@@ -292,6 +330,7 @@ class FileListAdapter(
             }
         } else {
             holder.iconLayout.isVisible = true
+            holder.nameText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15.5f)
         }
         val iconRes = file.mimeType.iconRes
         holder.iconImage.apply {
@@ -300,7 +339,7 @@ class FileListAdapter(
         }
         holder.directoryThumbnailImage?.isVisible = isDirectory
         holder.thumbnailOutlineView?.isVisible = !isDirectory
-        val supportsThumbnail = file.supportsThumbnail
+        val supportsThumbnail = file.supportsThumbnail && BrightCalmTheme.isShowThumbnails(context)
         val shouldLoadThumbnailIcon = supportsThumbnail && holder.thumbnailIconImage != null &&
             file.mimeType.isApk
         val attributes = file.attributes
@@ -356,16 +395,25 @@ class FileListAdapter(
                 setImageDrawable(null)
             }
         }
-        holder.nameText.text = file.name
-        holder.descriptionText?.text = if (isDirectory) {
-            null
+        val showExt = BrightCalmTheme.isShowExtensions(context)
+        val rawName = file.name
+        val displayName = if (showExt || isDirectory || !rawName.contains('.')) {
+            rawName
         } else {
-            val context = holder.descriptionText!!.context
+            rawName.substringBeforeLast('.').ifEmpty { rawName }
+        }
+        val isFav = runCatching { BrightCalmTheme.isFavorite(context, file.path.toFile().absolutePath) }.getOrDefault(false)
+        holder.nameText.text = if (isFav) "★ $displayName" else displayName
+        holder.descriptionText?.text = if (isDirectory) {
+            val lastModificationTime = attributes.lastModifiedTime().toInstant()
+                .formatShort(context)
+            "文件夹 · $lastModificationTime"
+        } else {
             val lastModificationTime = attributes.lastModifiedTime().toInstant()
                 .formatShort(context)
             val size = attributes.fileSize.formatHumanReadable(context)
             val descriptionSeparator = context.getString(R.string.file_item_description_separator)
-            listOf(lastModificationTime, size).joinToString(descriptionSeparator)
+            listOf(size, lastModificationTime).joinToString(descriptionSeparator)
         }
         val isArchivePath = path.isArchivePath
         menu.findItem(R.id.action_copy)
@@ -459,6 +507,8 @@ class FileListAdapter(
     class ViewHolder private constructor(
         root: View,
         val itemLayout: CheckableForegroundLinearLayout,
+        val selectedBarView: View?,
+        val bottomDividerView: View?,
         val iconLayout: View,
         val iconImage: ImageView,
         val directoryThumbnailImage: ImageView?,
@@ -474,6 +524,8 @@ class FileListAdapter(
         constructor(binding: FileItemListBinding) : this(
             binding.root,
             binding.itemLayout,
+            binding.selectedBarView,
+            binding.bottomDividerView,
             binding.iconLayout,
             binding.iconImage,
             null,
@@ -490,6 +542,8 @@ class FileListAdapter(
         constructor(binding: FileItemGridBinding) : this(
             binding.root,
             binding.itemLayout,
+            null,
+            null,
             binding.iconLayout,
             binding.iconImage,
             binding.directoryThumbnailImage,

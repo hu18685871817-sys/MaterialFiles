@@ -1,38 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
-
-    <!-- 3D Drop Shadow Base -->
-    <path
-        android:fillColor="#065F46"
-        android:pathData="M6.2,3.2H15.0L20.0,8.2V19.8C20.0,21.01 19.01,22 17.8,22H6.2C4.99,22 4.0,21.01 4.0,19.8V5.4C4.0,4.19 4.99,3.2 6.2,3.2Z" />
-
-    <!-- Main 3D Android Green Package Body -->
-    <path
-        android:fillColor="#10B981"
-        android:pathData="M5.8,2H14.6L19.6,7V18.8C19.6,20.01 18.61,21 17.4,21H5.8C4.59,21 3.6,20.01 3.6,18.8V4.2C3.6,2.99 4.59,2 5.8,2Z" />
-
-    <!-- Lower Shading Band -->
-    <path
-        android:fillColor="#059669"
-        android:pathData="M3.6,13.2H19.6V18.8C19.6,20.01 18.61,21 17.4,21H5.8C4.59,21 3.6,20.01 3.6,18.8V13.2Z" />
-
-    <!-- Folded Top-Right Dog-Ear Flap -->
-    <path
-        android:fillColor="#A7F3D0"
-        android:pathData="M14.6,2L19.6,7H15.9C15.18,7 14.6,6.42 14.6,5.7V2Z" />
-
-    <!-- Android Robot Dome & Antennas -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <!-- Section D.10 of 视觉素材板.svg: apk (#7C86B8, 16% tint, 1.75px linear) -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M15.1,10.2L16.3,8.2C16.45,7.95 16.36,7.63 16.11,7.48C15.86,7.33 15.54,7.42 15.39,7.67L14.12,9.75C13.38,9.4 12.52,9.2 11.6,9.2C10.68,9.2 9.82,9.4 9.08,9.75L7.81,7.67C7.66,7.42 7.34,7.33 7.09,7.48C6.84,7.63 6.75,7.95 6.9,8.2L8.1,10.2C6.65,11.1 5.68,12.68 5.6,14.5H17.6C17.52,12.68 16.55,11.1 15.1,10.2ZM9.2,12.8C8.76,12.8 8.4,12.44 8.4,12.0C8.4,11.56 8.76,11.2 9.2,11.2C9.64,11.2 10.0,11.56 10.0,12.0C10.0,12.44 9.64,12.8 9.2,12.8ZM14.0,12.8C13.56,12.8 13.2,12.44 13.2,12.0C13.2,11.56 13.56,11.2 14.0,11.2C14.44,11.2 14.8,11.56 14.8,12.0C14.8,12.44 14.44,12.8 14.0,12.8Z" />
-
-    <!-- Bottom APK Label Bar -->
+        android:pathData="M12,0 L52,0 A12,12 0 0,1 64,12 L64,52 A12,12 0 0,1 52,64 L12,64 A12,12 0 0,1 0,52 L0,12 A12,12 0 0,1 12,0 Z" />
     <path
-        android:fillColor="#ECFDF5"
-        android:pathData="M6.4,15.8H16.8V17.4H6.4V15.8Z" />
+        android:fillColor="#7C86B8"
+        android:fillAlpha="0.16"
+        android:pathData="M12,0 L52,0 A12,12 0 0,1 64,12 L64,52 A12,12 0 0,1 52,64 L12,64 A12,12 0 0,1 0,52 L0,12 A12,12 0 0,1 12,0 Z" />
+    <group
+        android:translateX="16"
+        android:translateY="16">
+        <path
+            android:pathData="M16,3 l12,7 v12 l-12,7 L4,22 V10 z M4,10 l12,7 l12,-7 M16,17 v12"
+            android:strokeWidth="1.75"
+            android:strokeColor="#7C86B8"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
 </vector>

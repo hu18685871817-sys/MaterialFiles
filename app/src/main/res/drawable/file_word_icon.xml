@@ -1,42 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
-
-    <!-- 3D Drop Shadow Base -->
-    <path
-        android:fillColor="#1E3A8A"
-        android:pathData="M6.2,3.2H15.0L20.0,8.2V19.8C20.0,21.01 19.01,22 17.8,22H6.2C4.99,22 4.0,21.01 4.0,19.8V5.4C4.0,4.19 4.99,3.2 6.2,3.2Z" />
-
-    <!-- Main 3D Royal Blue Page Body -->
-    <path
-        android:fillColor="#2563EB"
-        android:pathData="M5.8,2H14.6L19.6,7V18.8C19.6,20.01 18.61,21 17.4,21H5.8C4.59,21 3.6,20.01 3.6,18.8V4.2C3.6,2.99 4.59,2 5.8,2Z" />
-
-    <!-- Lower Shading Band -->
-    <path
-        android:fillColor="#1D4ED8"
-        android:pathData="M3.6,13.5H19.6V18.8C19.6,20.01 18.61,21 17.4,21H5.8C4.59,21 3.6,20.01 3.6,18.8V13.5Z" />
-
-    <!-- Folded Top-Right Dog-Ear Flap -->
-    <path
-        android:fillColor="#93C5FD"
-        android:pathData="M14.6,2L19.6,7H15.9C15.18,7 14.6,6.42 14.6,5.7V2Z" />
-
-    <!-- White Inner Text Lines -->
-    <path
-        android:fillColor="#DBEAFE"
-        android:pathData="M6.4,6.4H12.4V7.6H6.4V6.4ZM6.4,8.9H16.6V10.1H6.4V8.9ZM6.4,11.4H16.6V12.6H6.4V11.4Z" />
-
-    <!-- White Pill Badge with Bold 'W' -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <!-- Section D.5 of 视觉素材板.svg: doc (#3B9BFF, 16% tint, 1.75px linear) -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M5.4,14.0H17.8C18.3,14.0 18.7,14.4 18.7,14.9V18.1C18.7,18.6 18.3,19.0 17.8,19.0H5.4C4.9,19.0 4.5,18.6 4.5,18.1V14.9C4.5,14.4 4.9,14.0 5.4,14.0Z" />
-
+        android:pathData="M12,0 L52,0 A12,12 0 0,1 64,12 L64,52 A12,12 0 0,1 52,64 L12,64 A12,12 0 0,1 0,52 L0,12 A12,12 0 0,1 12,0 Z" />
     <path
-        android:fillColor="#1D4ED8"
-        android:pathData="M8.2,14.7L9.3,18.3H10.3L11.6,15.6L12.9,18.3H13.9L15.0,14.7H14.0L13.3,17.1L12.1,14.7H11.1L9.9,17.1L9.2,14.7H8.2Z" />
+        android:fillColor="#3B9BFF"
+        android:fillAlpha="0.16"
+        android:pathData="M12,0 L52,0 A12,12 0 0,1 64,12 L64,52 A12,12 0 0,1 52,64 L12,64 A12,12 0 0,1 0,52 L0,12 A12,12 0 0,1 12,0 Z" />
+    <group
+        android:translateX="16"
+        android:translateY="16">
+        <path
+            android:pathData="M9,3 h10 l6,6 v19 a2,2 0 0,1 -2,2 H9 a2,2 0 0,1 -2,-2 V5 a2,2 0 0,1 2,-2 z"
+            android:strokeWidth="1.75"
+            android:strokeColor="#3B9BFF"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M19,3 v6 h6 M11,16 h10 M11,21 h7"
+            android:strokeWidth="1.75"
+            android:strokeColor="#3B9BFF"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
 </vector>

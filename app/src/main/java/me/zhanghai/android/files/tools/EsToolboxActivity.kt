@@ -51,6 +51,9 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.zhanghai.android.files.app.AppActivity
+import me.zhanghai.android.files.ui.BrightCalmPanels
+import me.zhanghai.android.files.ui.BrightCalmTheme
+import me.zhanghai.android.files.ui.BrightCalmTheme.applyTabularNums
 import me.zhanghai.android.files.util.createIntent
 import me.zhanghai.android.files.viewer.archive.ArchivePreviewActivity
 import me.zhanghai.android.files.viewer.document.DocumentPreviewActivity
@@ -78,9 +81,11 @@ class EsToolboxActivity : AppActivity() {
         currentMode = intent.getStringExtra(EXTRA_MODE) ?: MODE_CATEGORY
         currentCategory = intent.getStringExtra(EXTRA_CATEGORY) ?: CAT_IMAGE
 
+        val t = BrightCalmTheme.of(this)
+
         rootLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#F8FAFC"))
+            setBackgroundColor(t.background)
         }
 
         ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { view, insets ->
@@ -94,7 +99,7 @@ class EsToolboxActivity : AppActivity() {
             insets
         }
 
-        setupHeader()
+        setupHeader(t)
 
         contentFrame = FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(
@@ -114,36 +119,38 @@ class EsToolboxActivity : AppActivity() {
         scope.cancel()
     }
 
-    private fun setupHeader() {
+    private fun setupHeader(t: BrightCalmTheme.Tokens) {
         val bar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(Color.WHITE)
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            elevation = dp(3).toFloat()
+            setBackgroundColor(t.card)
+            setPadding(dp(8), dp(8), dp(12), dp(8))
         }
 
-        val backBtn = TextView(this).apply {
-            text = "←"
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
-            setTextColor(Color.parseColor("#0F172A"))
-            setPadding(dp(10), dp(4), dp(12), dp(4))
+        val backBtn = FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
+            addView(BrightCalmTheme.createLinearIcon(this@EsToolboxActivity, "back", t.foreground, 22).apply {
+                layoutParams = FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER)
+            })
             setOnClickListener { finish() }
         }
         bar.addView(backBtn)
 
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                leftMargin = dp(4)
+            }
         }
         titleTv = TextView(this).apply {
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
             setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.parseColor("#0F172A"))
+            setTextColor(t.foreground)
         }
         subtitleTv = TextView(this).apply {
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-            setTextColor(Color.parseColor("#64748B"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setTextColor(t.mutedForeground)
+            applyTabularNums()
         }
         col.addView(titleTv)
         col.addView(subtitleTv)
@@ -156,6 +163,10 @@ class EsToolboxActivity : AppActivity() {
         bar.addView(headerRightContainer)
 
         rootLayout.addView(bar)
+        rootLayout.addView(View(this).apply {
+            setBackgroundColor(t.border)
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1)
+        })
     }
 
     private fun renderCurrentMode() {
@@ -164,6 +175,8 @@ class EsToolboxActivity : AppActivity() {
             MODE_APP_MANAGER -> renderAppManagerScreen()
             MODE_RECYCLE_BIN -> renderRecycleBinScreen()
             MODE_VAULT -> renderEncryptionVaultScreen()
+            MODE_LARGE_FILES -> renderLargeFilesScreen()
+            MODE_DUPLICATE_FILES -> renderDuplicateFilesScreen()
             else -> renderCategoryBrowserScreen()
         }
     }
@@ -171,26 +184,29 @@ class EsToolboxActivity : AppActivity() {
     // ==================== 1. Instant MediaStore + Cached Category Browser ====================
 
     private fun renderCategoryBrowserScreen() {
+        val t = BrightCalmTheme.of(this)
         titleTv.text = "分类文件库"
-        subtitleTv.text = "高速索引缓存 · 支持按文件类型或所属文件夹聚合浏览"
+        subtitleTv.text = "高速索引缓存 · 按类型与文件夹聚合浏览"
         contentFrame.removeAllViews()
 
         var groupByFolder = false
 
-        val refreshChip = makeChip("🔄", "#F1F5F9", "#334155") {
-            categoryCache.remove(currentCategory)
-            loadCategoryFiles(groupByFolder, forceRefresh = true)
-        }.apply {
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { rightMargin = dp(6) }
+        val refreshBtn = FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(44), dp(44)).apply { rightMargin = dp(4) }
+            addView(BrightCalmTheme.createLinearIcon(this@EsToolboxActivity, "search", t.foreground, 20).apply {
+                layoutParams = FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER)
+            })
+            setOnClickListener {
+                BrightCalmPanels.showGlobalSearchOverlay(this@EsToolboxActivity, null) { f ->
+                    openRealFile(f)
+                }
+            }
         }
-        val toggleGroupChip = makeChip("📁 按文件夹分组", "#EEF2FF", "#4338CA") {
+        val toggleGroupChip = makeChip("按文件夹", t.accent, t.primary) {
             groupByFolder = !groupByFolder
             loadCategoryFiles(groupByFolder, forceRefresh = false)
         }
-        headerRightContainer.addView(refreshChip)
+        headerRightContainer.addView(refreshBtn)
         headerRightContainer.addView(toggleGroupChip)
 
         loadCategoryFiles(groupByFolder, forceRefresh = false)
@@ -199,6 +215,7 @@ class EsToolboxActivity : AppActivity() {
     private fun loadCategoryFiles(groupByFolder: Boolean, forceRefresh: Boolean) {
         loadJob?.cancel()
         contentFrame.removeAllViews()
+        val t = BrightCalmTheme.of(this)
 
         val mainCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -208,40 +225,44 @@ class EsToolboxActivity : AppActivity() {
             )
         }
 
-        // Category tabs
+        // Category tabs with 14% type tint for active filter chip (§02 Rule 5)
         val tabScroll = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
-            setBackgroundColor(Color.WHITE)
-            setPadding(dp(12), dp(8), dp(12), dp(8))
+            setBackgroundColor(t.card)
+            setPadding(dp(16), dp(10), dp(16), dp(10))
         }
         val tabRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
         val cats = listOf(
-            CAT_IMAGE to "🖼️ 图片",
-            CAT_VIDEO to "🎬 视频",
-            CAT_AUDIO to "🎵 音频",
-            CAT_DOC to "📄 文档/PDF",
-            CAT_ARCHIVE to "🗜️ 压缩包",
-            CAT_APK to "🤖 安装包 APK"
+            Triple(CAT_IMAGE, "图片", BrightCalmTheme.FileKind.IMAGE),
+            Triple(CAT_VIDEO, "视频", BrightCalmTheme.FileKind.VIDEO),
+            Triple(CAT_AUDIO, "音频", BrightCalmTheme.FileKind.AUDIO),
+            Triple(CAT_DOC, "文档", BrightCalmTheme.FileKind.DOCUMENT),
+            Triple(CAT_ARCHIVE, "压缩包", BrightCalmTheme.FileKind.ARCHIVE),
+            Triple(CAT_APK, "安装包", BrightCalmTheme.FileKind.APK),
+            Triple(CAT_FAVORITE, "收藏", BrightCalmTheme.FileKind.FOLDER)
         )
-        cats.forEach { (key, label) ->
+        cats.forEach { (key, label, kind) ->
             val active = currentCategory == key
+            val typeColor = t.typeColor(kind)
             val chip = TextView(this).apply {
                 text = label
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
                 setTypeface(null, if (active) Typeface.BOLD else Typeface.NORMAL)
-                setTextColor(if (active) Color.WHITE else Color.parseColor("#334155"))
+                setTextColor(if (active) typeColor else t.foreground)
                 background = GradientDrawable().apply {
-                    cornerRadius = dp(16).toFloat()
-                    setColor(if (active) Color.parseColor("#2563EB") else Color.parseColor("#F1F5F9"))
+                    cornerRadius = dp(999).toFloat()
+                    setColor(
+                        if (active) BrightCalmTheme.withAlpha(typeColor, t.filterChipTintAlpha)
+                        else t.muted
+                    )
                 }
-                setPadding(dp(12), dp(6), dp(12), dp(6))
-                val lp = LinearLayout.LayoutParams(
+                setPadding(dp(14), dp(7), dp(14), dp(7))
+                layoutParams = LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT
                 ).apply { rightMargin = dp(8) }
-                layoutParams = lp
                 setOnClickListener {
                     currentCategory = key
                     loadCategoryFiles(groupByFolder, forceRefresh = false)
@@ -251,6 +272,10 @@ class EsToolboxActivity : AppActivity() {
         }
         tabScroll.addView(tabRow)
         mainCol.addView(tabScroll)
+        mainCol.addView(View(this).apply {
+            setBackgroundColor(t.border)
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1)
+        })
 
         val listScroll = ScrollView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
@@ -261,7 +286,7 @@ class EsToolboxActivity : AppActivity() {
         }
         val listCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(12), dp(14), dp(24))
+            setPadding(dp(16), dp(12), dp(16), dp(24))
         }
         listScroll.addView(listCol)
         mainCol.addView(listScroll)
@@ -269,42 +294,65 @@ class EsToolboxActivity : AppActivity() {
 
         fun renderFilesToUi(files: List<File>) {
             listCol.removeAllViews()
+            subtitleTv.text = "共 ${files.size} 项"
             if (files.isEmpty()) {
-                listCol.addView(TextView(this@EsToolboxActivity).apply {
-                    text = "当前分类下暂无手机文件"
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-                    setTextColor(Color.parseColor("#64748B"))
-                    gravity = Gravity.CENTER
-                    setPadding(dp(16), dp(48), dp(16), dp(48))
-                })
+                listCol.addView(
+                    BrightCalmTheme.buildEmptyStateView(
+                        context = this@EsToolboxActivity,
+                        kind = "folder",
+                        title = "这个分类还是空的",
+                        subtitle = "此类别下还没有找到文件",
+                        actionText = "刷新索引"
+                    ) {
+                        categoryCache.remove(currentCategory)
+                        loadCategoryFiles(groupByFolder, forceRefresh = true)
+                    }
+                )
                 return
             }
 
-            // Cap initial UI rendering to 250 items so ScrollView stays silky smooth
             val displayFiles = files.take(250)
             if (groupByFolder) {
                 val grouped = displayFiles.groupBy { it.parentFile?.name ?: "根目录" }
                 grouped.forEach { (folderName, folderFiles) ->
                     val folderHeader = TextView(this@EsToolboxActivity).apply {
-                        text = "📁 $folderName (${folderFiles.size})"
-                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                        text = "$folderName · ${folderFiles.size}"
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
                         setTypeface(null, Typeface.BOLD)
-                        setTextColor(Color.parseColor("#1E3A8A"))
-                        setPadding(dp(4), dp(10), dp(4), dp(6))
+                        setTextColor(t.mutedForeground)
+                        applyTabularNums()
+                        setPadding(dp(4), dp(12), dp(4), dp(6))
                     }
                     listCol.addView(folderHeader)
-                    folderFiles.forEach { f ->
-                        listCol.addView(createFileItemRow(f))
+                    val card = createCardContainer(t)
+                    folderFiles.forEachIndexed { idx, f ->
+                        card.addView(createFileItemRow(f, t) { loadCategoryFiles(groupByFolder, forceRefresh = true) })
+                        if (idx < folderFiles.lastIndex) {
+                            card.addView(createIndentedDivider(t))
+                        }
                     }
+                    listCol.addView(card)
                 }
             } else {
-                displayFiles.forEach { f ->
-                    listCol.addView(createFileItemRow(f))
+                val card = createCardContainer(t)
+                displayFiles.forEachIndexed { idx, f ->
+                    card.addView(createFileItemRow(f, t) { loadCategoryFiles(groupByFolder, forceRefresh = true) })
+                    if (idx < displayFiles.lastIndex) {
+                        card.addView(createIndentedDivider(t))
+                    }
                 }
+                listCol.addView(card)
             }
         }
 
-        // 1. Instant 0ms display from memory cache if available!
+        if (currentCategory == CAT_FAVORITE) {
+            val favFiles = BrightCalmTheme.getFavorites(this)
+                .map { File(it) }
+                .filter { it.exists() }
+            renderFilesToUi(favFiles)
+            return
+        }
+
         val cached = if (!forceRefresh) categoryCache[currentCategory] else null
         if (cached != null) {
             renderFilesToUi(cached)
@@ -312,8 +360,8 @@ class EsToolboxActivity : AppActivity() {
         }
 
         listCol.addView(TextView(this).apply {
-            text = "⚡ 正在快速加载..."
-            setTextColor(Color.parseColor("#64748B"))
+            text = "正在快速加载..."
+            setTextColor(t.mutedForeground)
             gravity = Gravity.CENTER
             setPadding(dp(16), dp(36), dp(16), dp(36))
         })
@@ -326,59 +374,217 @@ class EsToolboxActivity : AppActivity() {
         }
     }
 
-    private fun createFileItemRow(file: File): View {
-        val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-        val ext = file.extension.lowercase(Locale.ROOT)
+    // ==================== 2. Large Files & Duplicate Files ====================
+
+    private fun renderLargeFilesScreen() {
+        val t = BrightCalmTheme.of(this)
+        val thresholdMb = BrightCalmTheme.getLargeFileThresholdMb(this)
+        titleTv.text = "大文件清理"
+        subtitleTv.text = "筛选体积 ≥ ${thresholdMb} MB 的文件"
+        contentFrame.removeAllViews()
+
+        val scroll = ScrollView(this)
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(24))
+        }
+        scroll.addView(col)
+        contentFrame.addView(scroll)
+
+        loadJob?.cancel()
+        loadJob = scope.launch {
+            val thresholdBytes = thresholdMb * 1024L * 1024L
+            val largeFiles = withContext(Dispatchers.IO) {
+                val all = listOf(CAT_VIDEO, CAT_ARCHIVE, CAT_APK, CAT_DOC, CAT_IMAGE, CAT_AUDIO)
+                    .flatMap { queryFilesFast(this@EsToolboxActivity, it, forceRefresh = false) }
+                    .distinctBy { it.absolutePath }
+                all.filter { it.length() >= thresholdBytes }.sortedByDescending { it.length() }
+            }
+            col.removeAllViews()
+            val totalBytes = largeFiles.sumOf { it.length() }
+            subtitleTv.text = "${largeFiles.size} 个大文件 · 共 ${Formatter.formatFileSize(this@EsToolboxActivity, totalBytes)}"
+            if (largeFiles.isEmpty()) {
+                col.addView(
+                    BrightCalmTheme.buildEmptyStateView(
+                        context = this@EsToolboxActivity,
+                        kind = "search",
+                        title = "没有发现大文件",
+                        subtitle = "当前存储中没有大于 ${thresholdMb} MB 的文件"
+                    )
+                )
+            } else {
+                val card = createCardContainer(t)
+                largeFiles.take(150).forEachIndexed { idx, file ->
+                    card.addView(createFileItemRow(file, t) { renderLargeFilesScreen() })
+                    if (idx < largeFiles.take(150).lastIndex) {
+                        card.addView(createIndentedDivider(t))
+                    }
+                }
+                col.addView(card)
+            }
+        }
+    }
+
+    private fun renderDuplicateFilesScreen() {
+        val t = BrightCalmTheme.of(this)
+        titleTv.text = "重复文件识别"
+        subtitleTv.text = "按相同体积与文件名特征智能归组"
+        contentFrame.removeAllViews()
+
+        val scroll = ScrollView(this)
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(24))
+        }
+        scroll.addView(col)
+        contentFrame.addView(scroll)
+
+        loadJob?.cancel()
+        loadJob = scope.launch {
+            val groups = withContext(Dispatchers.IO) {
+                val all = listOf(CAT_IMAGE, CAT_VIDEO, CAT_AUDIO, CAT_DOC, CAT_ARCHIVE, CAT_APK)
+                    .flatMap { queryFilesFast(this@EsToolboxActivity, it, forceRefresh = false) }
+                    .distinctBy { it.absolutePath }
+                    .filter { it.length() > 1024L }
+                all.groupBy { "${it.length()}_${it.extension.lowercase(Locale.ROOT)}" }
+                    .values
+                    .filter { it.size > 1 }
+                    .sortedByDescending { it.first().length() * (it.size - 1) }
+            }
+            col.removeAllViews()
+            val redundantBytes = groups.sumOf { g -> g.first().length() * (g.size - 1) }
+            subtitleTv.text = "${groups.size} 组重复 · 可释放 ${Formatter.formatFileSize(this@EsToolboxActivity, redundantBytes)}"
+            if (groups.isEmpty()) {
+                col.addView(
+                    BrightCalmTheme.buildEmptyStateView(
+                        context = this@EsToolboxActivity,
+                        kind = "search",
+                        title = "未发现重复文件",
+                        subtitle = "您的存储空间非常整洁"
+                    )
+                )
+            } else {
+                groups.take(40).forEachIndexed { gIdx, group ->
+                    col.addView(TextView(this@EsToolboxActivity).apply {
+                        text = "重复组 #${gIdx + 1} · 单文件 ${Formatter.formatFileSize(this@EsToolboxActivity, group.first().length())} (${group.size} 份)"
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                        setTypeface(null, Typeface.BOLD)
+                        setTextColor(t.mutedForeground)
+                        applyTabularNums()
+                        setPadding(dp(4), dp(10), dp(4), dp(6))
+                    })
+                    val card = createCardContainer(t)
+                    group.forEachIndexed { idx, file ->
+                        card.addView(createFileItemRow(file, t) { renderDuplicateFilesScreen() })
+                        if (idx < group.lastIndex) {
+                            card.addView(createIndentedDivider(t))
+                        }
+                    }
+                    col.addView(card)
+                }
+            }
+        }
+    }
+
+    private fun createCardContainer(t: BrightCalmTheme.Tokens): LinearLayout =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                cornerRadius = dp(14).toFloat()
+                setColor(t.card)
+                setStroke(1, t.border)
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(10) }
+        }
+
+    private fun createIndentedDivider(t: BrightCalmTheme.Tokens): View =
+        View(this).apply {
+            setBackgroundColor(t.border)
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1).apply {
+                leftMargin = dp(56)
+            }
+        }
+
+    private fun createFileItemRow(
+        file: File,
+        t: BrightCalmTheme.Tokens,
+        onChanged: () -> Unit = {}
+    ): View {
+        val dateFormat = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
+        val compact = BrightCalmTheme.isCompactList(this)
+        val showExt = BrightCalmTheme.isShowExtensions(this)
+        val isFav = BrightCalmTheme.isFavorite(this, file.absolutePath)
+
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = GradientDrawable().apply {
-                cornerRadius = dp(12).toFloat()
-                setColor(Color.WHITE)
-                setStroke(dp(1), Color.parseColor("#E2E8F0"))
-            }
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            val lp = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(8) }
-            layoutParams = lp
+            minimumHeight = dp(if (compact) 48 else 64)
+            setPadding(dp(12), dp(if (compact) 6 else 10), dp(6), dp(if (compact) 6 else 10))
 
-            val iconTv = TextView(this@EsToolboxActivity).apply {
-                text = when {
-                    ext == "pdf" -> "📕"
-                    currentCategory == CAT_IMAGE -> "🖼️"
-                    currentCategory == CAT_VIDEO -> "🎬"
-                    currentCategory == CAT_AUDIO -> "🎵"
-                    currentCategory == CAT_DOC -> "📄"
-                    currentCategory == CAT_ARCHIVE -> "🗜️"
-                    currentCategory == CAT_APK -> "🤖"
-                    else -> "📄"
-                }
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
-                setPadding(0, 0, dp(12), 0)
-            }
-            addView(iconTv)
+            addView(BrightCalmTheme.createFileTypeIconBox(this@EsToolboxActivity, file, 40, 12))
 
             val infoCol = LinearLayout(this@EsToolboxActivity).apply {
                 orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    leftMargin = dp(12)
+                }
             }
+            val displayName = if (showExt || file.isDirectory) file.name else file.nameWithoutExtension.ifEmpty { file.name }
             infoCol.addView(TextView(this@EsToolboxActivity).apply {
-                text = file.name
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                text = displayName
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15.5f)
                 setTypeface(null, Typeface.BOLD)
-                setTextColor(Color.parseColor("#0F172A"))
+                setTextColor(t.foreground)
                 maxLines = 1
-                ellipsize = TextUtils.TruncateAt.MIDDLE
+                ellipsize = TextUtils.TruncateAt.END
             })
             infoCol.addView(TextView(this@EsToolboxActivity).apply {
-                text = "${Formatter.formatFileSize(this@EsToolboxActivity, file.length())} · ${dateFormat.format(Date(file.lastModified()))}\n${file.parentFile?.absolutePath ?: ""}"
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-                setTextColor(Color.parseColor("#64748B"))
-                maxLines = 2
+                val parentLabel = file.parentFile?.name ?: ""
+                text = "${Formatter.formatFileSize(this@EsToolboxActivity, file.length())} · ${dateFormat.format(Date(file.lastModified()))} · $parentLabel"
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                setTextColor(t.mutedForeground)
+                applyTabularNums()
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
             })
             addView(infoCol)
+
+            if (isFav) {
+                addView(
+                    BrightCalmTheme.createLinearIcon(
+                        this@EsToolboxActivity,
+                        "star_filled",
+                        t.warning,
+                        16
+                    ).apply {
+                        layoutParams = LinearLayout.LayoutParams(dp(16), dp(16)).apply {
+                            rightMargin = dp(4)
+                        }
+                    }
+                )
+            }
+
+            val moreBtn = FrameLayout(this@EsToolboxActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
+                addView(
+                    BrightCalmTheme.createLinearIcon(this@EsToolboxActivity, "more", t.mutedForeground, 20).apply {
+                        layoutParams = FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER)
+                    }
+                )
+                setOnClickListener {
+                    BrightCalmPanels.showFileDetailSheet(
+                        context = this@EsToolboxActivity,
+                        file = file,
+                        anchorForSnackbar = rootLayout,
+                        onOpen = { openRealFile(it) },
+                        onChanged = onChanged
+                    )
+                }
+            }
+            addView(moreBtn)
 
             setOnClickListener {
                 openRealFile(file)
@@ -418,7 +624,7 @@ class EsToolboxActivity : AppActivity() {
         }
     }
 
-    // ==================== 2. App Manager ====================
+    // ==================== 3. App Manager ====================
 
     private data class AppEntry(
         val appName: String,
@@ -432,8 +638,9 @@ class EsToolboxActivity : AppActivity() {
     )
 
     private fun renderAppManagerScreen() {
-        titleTv.text = "应用管理器 (App Manager)"
-        subtitleTv.text = "支持 APK 一键备份、作为 ZIP 浏览内部资源"
+        val t = BrightCalmTheme.of(this)
+        titleTv.text = "应用管理器"
+        subtitleTv.text = "APK 一键备份 · 作为 ZIP 浏览内部资源"
         contentFrame.removeAllViews()
 
         var activeTab = 0
@@ -449,25 +656,25 @@ class EsToolboxActivity : AppActivity() {
 
         val tabRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(Color.WHITE)
-            setPadding(dp(12), dp(8), dp(12), dp(8))
+            setBackgroundColor(t.card)
+            setPadding(dp(16), dp(8), dp(16), dp(8))
         }
 
         val searchInput = EditText(this).apply {
-            hint = "🔍 搜索应用名称或包名 (Package Name)..."
+            hint = "搜索应用名称或包名..."
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTextColor(t.foreground)
+            setHintTextColor(t.mutedForeground)
             setSingleLine(true)
             background = GradientDrawable().apply {
-                cornerRadius = dp(10).toFloat()
-                setColor(Color.WHITE)
-                setStroke(dp(1), Color.parseColor("#CBD5E1"))
+                cornerRadius = dp(999).toFloat()
+                setColor(t.muted)
             }
-            setPadding(dp(12), dp(8), dp(12), dp(8))
-            val lp = LinearLayout.LayoutParams(
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+            layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(dp(14), dp(8), dp(14), dp(4)) }
-            layoutParams = lp
+            ).apply { setMargins(dp(16), dp(8), dp(16), dp(4)) }
         }
 
         val listScroll = ScrollView(this).apply {
@@ -479,7 +686,7 @@ class EsToolboxActivity : AppActivity() {
         }
         val listContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(8), dp(14), dp(24))
+            setPadding(dp(16), dp(8), dp(16), dp(24))
         }
         listScroll.addView(listContainer)
 
@@ -499,9 +706,9 @@ class EsToolboxActivity : AppActivity() {
             val sysCount = allInstalledApps.count { it.isSystem }
 
             val tabs = listOf(
-                0 to "📱 用户应用 ($userCount)",
-                1 to "⚙️ 系统应用 ($sysCount)",
-                2 to "📦 已备份 APK (${backupApks.size})"
+                0 to "用户应用 ($userCount)",
+                1 to "系统应用 ($sysCount)",
+                2 to "已备份 APK (${backupApks.size})"
             )
 
             tabs.forEach { (idx, label) ->
@@ -511,10 +718,11 @@ class EsToolboxActivity : AppActivity() {
                     gravity = Gravity.CENTER
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
                     setTypeface(null, if (selected) Typeface.BOLD else Typeface.NORMAL)
-                    setTextColor(if (selected) Color.WHITE else Color.parseColor("#334155"))
+                    setTextColor(if (selected) t.primary else t.foreground)
+                    applyTabularNums()
                     background = GradientDrawable().apply {
-                        cornerRadius = dp(14).toFloat()
-                        setColor(if (selected) Color.parseColor("#2563EB") else Color.parseColor("#F1F5F9"))
+                        cornerRadius = dp(999).toFloat()
+                        setColor(if (selected) BrightCalmTheme.withAlpha(t.primary, 0.14f) else t.muted)
                     }
                     setPadding(dp(10), dp(7), dp(10), dp(7))
                     layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
@@ -533,17 +741,23 @@ class EsToolboxActivity : AppActivity() {
 
             if (activeTab == 2) {
                 if (backupApks.isEmpty()) {
-                    listContainer.addView(TextView(this).apply {
-                        text = "暂无已备份的 APK\n点击任意应用可一键备份至 /backups/apps/"
-                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-                        setTextColor(Color.parseColor("#64748B"))
-                        gravity = Gravity.CENTER
-                        setPadding(dp(20), dp(40), dp(20), dp(40))
-                    })
+                    listContainer.addView(
+                        BrightCalmTheme.buildEmptyStateView(
+                            context = this,
+                            kind = "folder",
+                            title = "暂无已备份的 APK",
+                            subtitle = "点击任意应用可一键备份至 /backups/apps/"
+                        )
+                    )
                 } else {
-                    backupApks.forEach { apkFile ->
-                        listContainer.addView(createFileItemRow(apkFile))
+                    val card = createCardContainer(t)
+                    backupApks.forEachIndexed { idx, apkFile ->
+                        card.addView(createFileItemRow(apkFile, t) { refreshTabsAndList() })
+                        if (idx < backupApks.lastIndex) {
+                            card.addView(createIndentedDivider(t))
+                        }
                     }
+                    listContainer.addView(card)
                 }
                 return
             }
@@ -556,28 +770,32 @@ class EsToolboxActivity : AppActivity() {
                 tabMatch && qMatch
             }
 
-            filtered.forEach { app ->
+            if (filtered.isEmpty()) {
+                listContainer.addView(
+                    BrightCalmTheme.buildEmptyStateView(
+                        context = this,
+                        kind = "search",
+                        title = "没有找到相关应用",
+                        subtitle = "尝试更换关键词"
+                    )
+                )
+                return
+            }
+
+            val card = createCardContainer(t)
+            filtered.forEachIndexed { idx, app ->
                 val row = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
-                    background = GradientDrawable().apply {
-                        cornerRadius = dp(12).toFloat()
-                        setColor(Color.WHITE)
-                        setStroke(dp(1), Color.parseColor("#E2E8F0"))
-                    }
+                    minimumHeight = dp(64)
                     setPadding(dp(12), dp(10), dp(12), dp(10))
-                    val lp = LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT
-                    ).apply { bottomMargin = dp(8) }
-                    layoutParams = lp
                     setOnClickListener {
                         showAppActionSheet(app) { refreshTabsAndList() }
                     }
                 }
 
                 val iconView = ImageView(this).apply {
-                    layoutParams = LinearLayout.LayoutParams(dp(44), dp(44)).apply {
+                    layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply {
                         rightMargin = dp(12)
                     }
                     try {
@@ -593,19 +811,26 @@ class EsToolboxActivity : AppActivity() {
                 }
                 col.addView(TextView(this).apply {
                     text = app.appName
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 15.5f)
                     setTypeface(null, Typeface.BOLD)
-                    setTextColor(Color.parseColor("#0F172A"))
+                    setTextColor(t.foreground)
                 })
                 col.addView(TextView(this).apply {
-                    text = "${app.packageName}\nv${app.versionName} (${app.versionCode}) · ${Formatter.formatFileSize(this@EsToolboxActivity, app.apkSize)} · ${dateFormat.format(Date(app.installTime))}"
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-                    setTextColor(Color.parseColor("#64748B"))
+                    text = "${app.packageName} · v${app.versionName} · ${Formatter.formatFileSize(this@EsToolboxActivity, app.apkSize)} · ${dateFormat.format(Date(app.installTime))}"
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
+                    setTextColor(t.mutedForeground)
+                    applyTabularNums()
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.END
                 })
                 row.addView(col)
 
-                listContainer.addView(row)
+                card.addView(row)
+                if (idx < filtered.lastIndex) {
+                    card.addView(createIndentedDivider(t))
+                }
             }
+            listContainer.addView(card)
         }
 
         searchInput.addTextChangedListener(object : TextWatcher {
@@ -649,10 +874,10 @@ class EsToolboxActivity : AppActivity() {
 
     private fun showAppActionSheet(app: AppEntry, onBackupDone: () -> Unit) {
         val actions = arrayOf(
-            "🚀 打开应用 (${app.appName})",
-            "📦 备份 APK 到 /backups/apps/${app.appName}_${app.versionName}.apk",
-            "🔍 作为 ZIP 浏览 APK 内部资源 (AndroidManifest / res / dex)",
-            "ℹ️ 打开系统应用信息页 / 卸载"
+            "打开应用 (${app.appName})",
+            "备份 APK 到 /backups/apps/${app.appName}_${app.versionName}.apk",
+            "作为 ZIP 浏览 APK 内部资源",
+            "打开系统应用信息页 / 卸载"
         )
         AlertDialog.Builder(this)
             .setTitle("${app.appName} (v${app.versionName})")
@@ -699,18 +924,19 @@ class EsToolboxActivity : AppActivity() {
             .show()
     }
 
-    // ==================== 3. Recycle Bin ====================
+    // ==================== 4. Recycle Bin ====================
 
     private fun renderRecycleBinScreen() {
-        titleTv.text = "回收站 (Recycle Bin)"
-        subtitleTv.text = "暂存已移入回收站的文件，支持一键还原或彻底清空"
+        val t = BrightCalmTheme.of(this)
+        titleTv.text = "回收站"
+        subtitleTv.text = "暂存已移入回收站的文件，支持还原或彻底清空"
         contentFrame.removeAllViews()
 
         val recycleDir = File(Environment.getExternalStorageDirectory(), ".es_recycle_bin").apply { mkdirs() }
 
         headerRightContainer.removeAllViews()
         headerRightContainer.addView(
-            makeChip("🔥 清空回收站", "#FEE2E2", "#B91C1C") {
+            makeChip("清空回收站", BrightCalmTheme.withAlpha(t.destructive, 0.14f), t.destructive) {
                 val items = recycleDir.listFiles()?.toList() ?: emptyList()
                 if (items.isEmpty()) {
                     Toast.makeText(this, "回收站已为空", Toast.LENGTH_SHORT).show()
@@ -731,138 +957,149 @@ class EsToolboxActivity : AppActivity() {
         val scroll = ScrollView(this)
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(14), dp(14), dp(24))
+            setPadding(dp(16), dp(14), dp(16), dp(24))
         }
 
         val items = recycleDir.listFiles()?.toList()?.sortedByDescending { it.lastModified() } ?: emptyList()
         if (items.isEmpty()) {
-            col.addView(TextView(this).apply {
-                text = "🗑️ 回收站当前为空\n删除文件时开启回收站保护后，被删文件将暂存于此"
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-                setTextColor(Color.parseColor("#64748B"))
-                gravity = Gravity.CENTER
-                setPadding(dp(20), dp(60), dp(20), dp(60))
-            })
+            col.addView(
+                BrightCalmTheme.buildEmptyStateView(
+                    context = this,
+                    kind = "folder",
+                    title = "回收站当前为空",
+                    subtitle = "被删除的文件将在此保留，可随时一键还原"
+                )
+            )
         } else {
-            val df = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-            items.forEach { f ->
-                val card = LinearLayout(this).apply {
+            val df = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
+            val card = createCardContainer(t)
+            items.forEachIndexed { idx, f ->
+                val row = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
-                    background = GradientDrawable().apply {
-                        cornerRadius = dp(12).toFloat()
-                        setColor(Color.WHITE)
-                        setStroke(dp(1), Color.parseColor("#E2E8F0"))
-                    }
-                    setPadding(dp(12), dp(12), dp(12), dp(12))
-                    val lp = LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT
-                    ).apply { bottomMargin = dp(8) }
-                    layoutParams = lp
+                    minimumHeight = dp(64)
+                    setPadding(dp(12), dp(10), dp(12), dp(10))
                 }
+                row.addView(BrightCalmTheme.createFileTypeIconBox(this, f, 40, 12))
                 val info = LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL
-                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        leftMargin = dp(12)
+                    }
                 }
                 info.addView(TextView(this).apply {
                     text = f.name
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 15.5f)
                     setTypeface(null, Typeface.BOLD)
-                    setTextColor(Color.parseColor("#0F172A"))
+                    setTextColor(t.foreground)
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.END
                 })
                 info.addView(TextView(this).apply {
                     text = "${Formatter.formatFileSize(this@EsToolboxActivity, f.length())} · 删除于 ${df.format(Date(f.lastModified()))}"
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-                    setTextColor(Color.parseColor("#64748B"))
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                    setTextColor(t.mutedForeground)
+                    applyTabularNums()
                 })
-                card.addView(info)
+                row.addView(info)
 
-                card.addView(makeChip("♻️ 还原", "#DCFCE7", "#15803D") {
+                row.addView(makeChip("还原", BrightCalmTheme.withAlpha(t.success, 0.14f), t.success) {
                     val restoreTarget = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), f.name)
                     f.renameTo(restoreTarget)
                     Toast.makeText(this, "已还原至 Download/${f.name}", Toast.LENGTH_SHORT).show()
                     renderRecycleBinScreen()
                 })
-                col.addView(card)
+                card.addView(row)
+                if (idx < items.lastIndex) {
+                    card.addView(createIndentedDivider(t))
+                }
             }
+            col.addView(card)
         }
 
         scroll.addView(col)
         contentFrame.addView(scroll)
     }
 
-    // ==================== 4. 128-bit Encryption Vault ====================
+    // ==================== 5. Private Encryption Vault ====================
 
     private fun renderEncryptionVaultScreen() {
-        titleTv.text = "🔐 128位文件加密保险箱"
-        subtitleTv.text = "使用 AES 对称密钥保护私密文档、照片与压缩包"
+        val t = BrightCalmTheme.of(this)
+        titleTv.text = "私密保险箱"
+        subtitleTv.text = "AES 加密隔离 · 保护私密文档、照片与压缩包"
         contentFrame.removeAllViews()
 
         val vaultDir = File(filesDir, "es_encrypted_vault").apply { mkdirs() }
         val scroll = ScrollView(this)
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(14), dp(14), dp(24))
+            setPadding(dp(16), dp(14), dp(16), dp(24))
         }
 
         val banner = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
                 cornerRadius = dp(14).toFloat()
-                setColor(Color.parseColor("#1E293B"))
+                setColor(BrightCalmTheme.withAlpha(t.primary, 0.12f))
+                setStroke(1, BrightCalmTheme.withAlpha(t.primary, 0.25f))
             }
-            setPadding(dp(16), dp(16), dp(16), dp(16))
-            val lp = LinearLayout.LayoutParams(
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { bottomMargin = dp(14) }
-            layoutParams = lp
         }
         banner.addView(TextView(this).apply {
-            text = "🛡️ AES-128 / AES-256 私密保险箱已解锁"
+            text = "私密保险箱已解锁"
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.WHITE)
+            setTextColor(t.primary)
         })
         banner.addView(TextView(this).apply {
             text = "保险箱路径隔离于应用私有加密区 (${vaultDir.listFiles()?.size ?: 0} 个受保护文件)"
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            setTextColor(Color.parseColor("#94A3B8"))
+            setTextColor(t.mutedForeground)
+            applyTabularNums()
             setPadding(0, dp(4), 0, 0)
         })
         col.addView(banner)
 
         val vaultFiles = vaultDir.listFiles()?.toList() ?: emptyList()
         if (vaultFiles.isEmpty()) {
-            col.addView(TextView(this).apply {
-                text = "当前保险箱中暂无加密文件\n您可在文件列表中通过「压缩 -> 启用 AES-256 密码加密」或将私密文件移入此处。"
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-                setTextColor(Color.parseColor("#64748B"))
-                gravity = Gravity.CENTER
-                setPadding(dp(20), dp(40), dp(20), dp(40))
-            })
+            col.addView(
+                BrightCalmTheme.buildEmptyStateView(
+                    context = this,
+                    kind = "permission",
+                    title = "保险箱中暂无加密文件",
+                    subtitle = "您可在文件详情或压缩选项中将私密文件移入此处"
+                )
+            )
         } else {
-            vaultFiles.forEach { vf ->
-                col.addView(createFileItemRow(vf))
+            val card = createCardContainer(t)
+            vaultFiles.forEachIndexed { idx, vf ->
+                card.addView(createFileItemRow(vf, t) { renderEncryptionVaultScreen() })
+                if (idx < vaultFiles.lastIndex) {
+                    card.addView(createIndentedDivider(t))
+                }
             }
+            col.addView(card)
         }
 
         scroll.addView(col)
         contentFrame.addView(scroll)
     }
 
-    private fun makeChip(label: String, bgHex: String, fgHex: String, onClick: () -> Unit): TextView {
+    private fun makeChip(label: String, bgColor: Int, fgColor: Int, onClick: () -> Unit): TextView {
         return TextView(this).apply {
             text = label
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.parseColor(fgHex))
+            setTextColor(fgColor)
             background = GradientDrawable().apply {
-                cornerRadius = dp(14).toFloat()
-                setColor(Color.parseColor(bgHex))
+                cornerRadius = dp(999).toFloat()
+                setColor(bgColor)
             }
-            setPadding(dp(10), dp(6), dp(10), dp(6))
+            setPadding(dp(12), dp(6), dp(12), dp(6))
             setOnClickListener { onClick() }
         }
     }
@@ -882,6 +1119,8 @@ class EsToolboxActivity : AppActivity() {
         const val MODE_APP_MANAGER = "mode_app_manager"
         const val MODE_RECYCLE_BIN = "mode_recycle_bin"
         const val MODE_VAULT = "mode_vault"
+        const val MODE_LARGE_FILES = "mode_large_files"
+        const val MODE_DUPLICATE_FILES = "mode_duplicate_files"
 
         const val CAT_IMAGE = "cat_image"
         const val CAT_VIDEO = "cat_video"
@@ -889,6 +1128,7 @@ class EsToolboxActivity : AppActivity() {
         const val CAT_DOC = "cat_doc"
         const val CAT_ARCHIVE = "cat_archive"
         const val CAT_APK = "cat_apk"
+        const val CAT_FAVORITE = "cat_favorite"
 
         // In-memory category cache so opening Image / Video / Audio / Doc categories is instantaneous
         private val categoryCache = ConcurrentHashMap<String, List<File>>()
@@ -931,6 +1171,9 @@ class EsToolboxActivity : AppActivity() {
          * Instant MediaStore query + targeted common user directories scan with memory caching.
          */
         fun queryFilesFast(context: Context, category: String, forceRefresh: Boolean = false): List<File> {
+            if (category == CAT_FAVORITE) {
+                return BrightCalmTheme.getFavorites(context).map { File(it) }.filter { it.exists() }
+            }
             if (!forceRefresh) {
                 categoryCache[category]?.let { return it }
             }
@@ -1020,25 +1263,26 @@ class EsToolboxActivity : AppActivity() {
             val exts = getCategoryExtensions(category)
             val results = mutableListOf<File>()
             val root = Environment.getExternalStorageDirectory()
+
             fun walk(dir: File, depth: Int) {
-                if (depth > 3) return
+                if (depth > 3 || results.size >= 150) return
                 val list = dir.listFiles() ?: return
                 for (f in list) {
                     if (f.name.startsWith(".")) continue
-                    if (f.isDirectory) {
-                        val lower = f.name.lowercase(Locale.ROOT)
-                        if (lower == "android" || lower == "cache" || lower == ".thumbnails") continue
-                        walk(f, depth + 1)
-                    } else if (f.isFile && f.length() > 0) {
+                    if (f.isFile && f.length() > 0) {
                         if (f.extension.lowercase(Locale.ROOT) in exts) {
                             results.add(f)
                         }
+                    } else if (f.isDirectory && !f.name.equals("Android", ignoreCase = true)) {
+                        walk(f, depth + 1)
                     }
                 }
             }
-            try {
-                walk(root, 0)
-            } catch (_: Exception) {
+
+            runCatching {
+                if (root.exists()) {
+                    walk(root, 0)
+                }
             }
             val sorted = results.sortedByDescending { it.lastModified() }
             categoryCache[category] = sorted

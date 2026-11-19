@@ -7,10 +7,12 @@ package me.zhanghai.android.files.filelist
 
 import android.content.Context
 import android.content.res.ColorStateList
+import android.graphics.Typeface
 import android.util.AttributeSet
 import android.view.View
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
+import android.widget.Toast
 import androidx.annotation.AttrRes
 import androidx.annotation.StyleRes
 import androidx.appcompat.widget.PopupMenu
@@ -18,7 +20,7 @@ import androidx.core.view.isVisible
 import java8.nio.file.Path
 import me.zhanghai.android.files.R
 import me.zhanghai.android.files.databinding.BreadcrumbItemBinding
-import me.zhanghai.android.files.util.getColorByAttr
+import me.zhanghai.android.files.ui.BrightCalmTheme
 import me.zhanghai.android.files.util.getDimensionPixelSize
 import me.zhanghai.android.files.util.getResourceIdByAttr
 import me.zhanghai.android.files.util.layoutInflater
@@ -26,16 +28,6 @@ import me.zhanghai.android.files.util.withTheme
 
 class BreadcrumbLayout : HorizontalScrollView {
     private val tabLayoutHeight = context.getDimensionPixelSize(R.dimen.tab_layout_height)
-    // Using a color state list resource somehow results in red color in dark mode on API 21.
-    // Run `git revert 5bb2fd1` once we no longer support API 21.
-    private val itemColor =
-        ColorStateList(
-            arrayOf(intArrayOf(android.R.attr.state_activated), intArrayOf()),
-            intArrayOf(
-                context.getColorByAttr(android.R.attr.textColorPrimary),
-                context.getColorByAttr(android.R.attr.textColorSecondary)
-            )
-        )
     private val popupContext = context.withTheme(
         context.getResourceIdByAttr(androidx.appcompat.R.attr.actionBarPopupTheme)
     )
@@ -75,11 +67,6 @@ class BreadcrumbLayout : HorizontalScrollView {
     }
 
     override fun jumpDrawablesToCurrentState() {
-        // HACK: AppBarLayout.updateAppBarLayoutDrawableState() calls
-        // CoordinatorLayout.jumpDrawablesToCurrentState() to fix a pre-N visual bug according to a
-        // comment in AppBarLayout.BaseBehavior.onLayoutChild(), however that results in our ripple
-        // disappearing. One way to ignore that call path is to skip when we are in layout, so that
-        // we at least preserve the other call path upon being attached to window.
         if (isInLayout) {
             return
         }
@@ -137,7 +124,7 @@ class BreadcrumbLayout : HorizontalScrollView {
             isScrollToSelectedItemPending = true
             return
         }
-        val selectedItemView = itemsLayout.getChildAt(data.selectedIndex)
+        val selectedItemView = itemsLayout.getChildAt(data.selectedIndex) ?: return
         val scrollX = if (layoutDirection == View.LAYOUT_DIRECTION_LTR) {
             selectedItemView.left - itemsLayout.paddingStart
         } else {
@@ -152,8 +139,6 @@ class BreadcrumbLayout : HorizontalScrollView {
     }
 
     private fun inflateItemViews() {
-        // HACK: Remove/add views at the front so that ripple remains correct, as we are potentially
-        // collapsing/expanding breadcrumbs at the front.
         for (index in data.paths.size..<itemsLayout.childCount) {
             itemsLayout.removeViewAt(0)
         }
@@ -161,25 +146,24 @@ class BreadcrumbLayout : HorizontalScrollView {
             val binding = BreadcrumbItemBinding.inflate(context.layoutInflater, itemsLayout, false)
             val menu = PopupMenu(popupContext, binding.root)
                 .apply { inflate(R.menu.file_list_breadcrumb) }
-            binding.root.setOnLongClickListener {
-                menu.show()
-                true
-            }
-            binding.text.setTextColor(itemColor)
-            binding.arrowImage.imageTintList = itemColor
             binding.root.tag = binding to menu
             itemsLayout.addView(binding.root, 0)
         }
     }
 
     private fun bindItemViews() {
+        val t = BrightCalmTheme.of(context)
         for (index in data.paths.indices) {
             @Suppress("UNCHECKED_CAST")
             val tag = itemsLayout.getChildAt(index).tag as Pair<BreadcrumbItemBinding, PopupMenu>
             val (binding, menu) = tag
+            val isSelected = index == data.selectedIndex
             binding.text.text = data.nameProducers[index](binding.text.context)
+            binding.text.setTextColor(if (isSelected) t.primary else t.mutedForeground)
+            binding.text.setTypeface(null, if (isSelected) Typeface.BOLD else Typeface.NORMAL)
+            binding.arrowImage.imageTintList = ColorStateList.valueOf(t.mutedForeground)
             binding.arrowImage.isVisible = index != data.paths.size - 1
-            binding.root.isActivated = index == data.selectedIndex
+            binding.root.isActivated = isSelected
             val path = data.paths[index]
             binding.root.setOnClickListener {
                 if (data.selectedIndex == index) {
@@ -187,6 +171,12 @@ class BreadcrumbLayout : HorizontalScrollView {
                 } else {
                     listener.navigateTo(path)
                 }
+            }
+            binding.root.setOnLongClickListener {
+                listener.copyPath(path)
+                Toast.makeText(context, "已复制完整路径", Toast.LENGTH_SHORT).show()
+                menu.show()
+                true
             }
             menu.setOnMenuItemClickListener {
                 when (it.itemId) {

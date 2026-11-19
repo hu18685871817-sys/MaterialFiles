@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="160dp"
+    android:height="140dp"
+    android:viewportWidth="160"
+    android:viewportHeight="140">
+    <!-- Section E.4 of 视觉素材板.svg: 加载失败 · 没能加载这个目录 -->
+    <path
+        android:fillColor="#6C5CE7"
+        android:fillAlpha="0.12"
+        android:pathData="M80,72 m-52,0 a52,52 0 1,0 104,0 a52,52 0 1,0 -104,0" />
+    <group
+        android:translateX="80"
+        android:translateY="72">
+        <path
+            android:pathData="M-26,8 a12,12 0 0,1 24,-10 a14,14 0 0,1 26,6 a10,10 0 0,1 2,12 H-24 a8,8 0 0,1 -2,-8 z"
+            android:strokeWidth="2.6"
+            android:strokeColor="#6C5CE7"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M-20,24 h40"
+            android:strokeWidth="2.6"
+            android:strokeColor="#6C5CE7"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
+    <path
+        android:pathData="M54,46 l34,34"
+        android:strokeWidth="3"
+        android:strokeColor="#F0536B"
+        android:strokeLineCap="round" />
+    <path
+        android:fillColor="#F5A623"
+        android:pathData="M112,44 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" />
+</vector>

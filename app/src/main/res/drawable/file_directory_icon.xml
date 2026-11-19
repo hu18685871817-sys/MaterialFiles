@@ -1,59 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
-
-    <!-- Back folder cover & top-left tab (Deep Amber) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <!-- Section D.1 of 视觉素材板.svg: folder (#F5A623, 16% tint, 1.75px linear) -->
     <path
-        android:fillColor="#D97706"
-        android:pathData="M2,6C2,4.62 3.12,3.5 4.5,3.5H9.2C9.85,3.5 10.46,3.82 10.83,4.35L11.85,5.8H19.5C20.88,5.8 22,6.92 22,8.3V18.2C22,19.47 20.97,20.5 19.7,20.5H4.3C3.03,20.5 2,19.47 2,18.2V6Z" />
-
-    <!-- Subtle inner shadow inside folder back -->
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,0 L52,0 A12,12 0 0,1 64,12 L64,52 A12,12 0 0,1 52,64 L12,64 A12,12 0 0,1 0,52 L0,12 A12,12 0 0,1 12,0 Z" />
     <path
-        android:fillColor="#B45309"
-        android:pathData="M2.8,7.2H21.2V11H2.8Z" />
-
-    <!-- Tucked inner document card peeking out -->
-    <path
-        android:fillColor="#FFFBEB"
-        android:pathData="M4.2,6.2C4.2,5.65 4.65,5.2 5.2,5.2H18.8C19.35,5.2 19.8,5.65 19.8,6.2V11.5H4.2V6.2Z" />
-
-    <!-- Document accent lines on the peeking sheet -->
-    <path
-        android:fillColor="#3B82F6"
-        android:pathData="M5.8,6.5H11.5V7.4H5.8Z" />
-    <path
-        android:fillColor="#F59E0B"
-        android:pathData="M12.5,6.5H17.8V7.4H12.5Z" />
-
-    <!-- Front folder body base (Warm Golden Amber) -->
-    <path
-        android:fillColor="#FBBF24"
-        android:pathData="M1.8,9.2C1.8,8.1 2.7,7.2 3.8,7.2H20.2C21.3,7.2 22.2,8.1 22.2,9.2L21.6,18.5C21.52,19.63 20.58,20.5 19.45,20.5H4.55C3.42,20.5 2.48,19.63 2.4,18.5L1.8,9.2Z" />
-
-    <!-- Lower 3D shading band on front folder pocket -->
-    <path
-        android:fillColor="#F59E0B"
-        android:pathData="M2.15,14.2H21.85L21.6,18.5C21.52,19.63 20.58,20.5 19.45,20.5H4.55C3.42,20.5 2.48,19.63 2.4,18.5L2.15,14.2Z" />
-
-    <!-- Upper 3D sunlit highlight band on front folder pocket -->
-    <path
-        android:fillColor="#FDE047"
-        android:fillAlpha="0.65"
-        android:pathData="M1.8,9.2C1.8,8.1 2.7,7.2 3.8,7.2H20.2C21.3,7.2 22.2,8.1 22.2,9.2L22.05,11.6H1.95L1.8,9.2Z" />
-
-    <!-- Front top bevel highlight strip -->
-    <path
-        android:fillColor="#FEF9C3"
-        android:fillAlpha="0.85"
-        android:pathData="M3.6,7.7H20.4C20.9,7.7 21.3,8.0 21.4,8.5H2.6C2.7,8.0 3.1,7.7 3.6,7.7Z" />
-
-    <!-- Decorative badge/grip on lower right of front pocket -->
-    <path
-        android:fillColor="#B45309"
-        android:fillAlpha="0.45"
-        android:pathData="M14.5,16.2H18.8C19.24,16.2 19.6,16.56 19.6,17C19.6,17.44 19.24,17.8 18.8,17.8H14.5C14.06,17.8 13.7,17.44 13.7,17C13.7,16.56 14.06,16.2 14.5,16.2Z" />
+        android:fillColor="#F5A623"
+        android:fillAlpha="0.16"
+        android:pathData="M12,0 L52,0 A12,12 0 0,1 64,12 L64,52 A12,12 0 0,1 52,64 L12,64 A12,12 0 0,1 0,52 L0,12 A12,12 0 0,1 12,0 Z" />
+    <group
+        android:translateX="16"
+        android:translateY="16">
+        <path
+            android:pathData="M3,10 h8 l3,3 h14 a2,2 0 0,1 2,2 v10 a2,2 0 0,1 -2,2 H5 a2,2 0 0,1 -2,-2 z"
+            android:strokeWidth="1.75"
+            android:strokeColor="#F5A623"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
 </vector>
