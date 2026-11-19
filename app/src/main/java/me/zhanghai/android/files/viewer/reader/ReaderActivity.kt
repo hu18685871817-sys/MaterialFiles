@@ -8,44 +8,173 @@ import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.provider.OpenableColumns
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
+import android.text.Spannable
+import android.text.SpannableStringBuilder
 import android.text.TextUtils
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
 import android.view.GestureDetector
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
+import android.widget.CheckBox
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import java8.nio.file.Path
-import me.zhanghai.android.files.R
-import me.zhanghai.android.files.app.AppActivity
-import me.zhanghai.android.files.file.asFileSize
-import me.zhanghai.android.files.util.createIntent
-import me.zhanghai.android.files.util.extraPath
-import me.zhanghai.android.files.util.showToast
-import me.zhanghai.android.files.viewer.document.DocumentPreviewActivity
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileInputStream
 import java.io.InputStream
 import java.nio.charset.Charset
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlin.concurrent.thread
+import java.util.zip.ZipInputStream
+import java8.nio.file.Path
 import kotlin.math.abs
+import me.zhanghai.android.files.R
+import me.zhanghai.android.files.app.AppActivity
+import me.zhanghai.android.files.util.createIntent
+import me.zhanghai.android.files.util.extraPath
+import me.zhanghai.android.files.util.showToast
+import me.zhanghai.android.files.viewer.document.DocumentPreviewActivity
 
-class ReaderActivity : AppActivity() {
+/**
+ * Port & Adaptation of Readext (https://github.com/thoughtram/read-ext)
+ *
+ * Implements the `ReadextStreamEngine` (`readIntoVec` / `readIntoString` stream extension trait)
+ * along with native `.epub` archive stream extraction, Readext Bionic Focus Reading, Full-Text
+ * Keyword Search, TTS Voice Read-Aloud, and persistent reading progress memory cache.
+ */
+class ReaderActivity : AppActivity(), TextToSpeech.OnInitListener {
+
+    /**
+     * Port of `thoughtram/read-ext` (`ReadExt::read_into_vec` & `ReadExt::read_into_string`)
+     * High-throughput chunked stream reader with automatic charset detection and EPUB stream decoding.
+     */
+    object ReadextStreamEngine {
+        private const val CHUNK_SIZE = 16 * 1024
+
+        fun readIntoVec(input: InputStream): ByteArray {
+            val out = ByteArrayOutputStream()
+            val buffer = ByteArray(CHUNK_SIZE)
+            while (true) {
+                val read = input.read(buffer)
+                if (read <= 0) break
+                out.write(buffer, 0, read)
+            }
+            return out.toByteArray()
+        }
+
+        fun readIntoString(input: InputStream, fileNameHint: String = ""): String {
+            val bytes = readIntoVec(input)
+            if (bytes.isEmpty()) return "（空文件）"
+
+            val lowerName = fileNameHint.lowercase(Locale.ROOT)
+            val isZipHeader = bytes.size >= 4 &&
+                bytes[0] == 0x50.toByte() &&
+                bytes[1] == 0x4B.toByte() &&
+                bytes[2] == 0x03.toByte() &&
+                bytes[3] == 0x04.toByte()
+            if (lowerName.endsWith(".epub") || isZipHeader) {
+                val epubText = runCatching { decodeEpubBytes(bytes) }.getOrNull()
+                if (!epubText.isNullOrBlank()) {
+                    return epubText
+                }
+            }
+
+            return decodeTextBytes(bytes)
+        }
+
+        fun decodeTextBytes(bytes: ByteArray): String {
+            if (bytes.isEmpty()) return "（空文件）"
+            // Check BOM
+            if (bytes.size >= 3 &&
+                bytes[0] == 0xEF.toByte() &&
+                bytes[1] == 0xBB.toByte() &&
+                bytes[2] == 0xBF.toByte()
+            ) {
+                return String(bytes, 3, bytes.size - 3, Charsets.UTF_8)
+            }
+            if (bytes.size >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte()) {
+                return String(bytes, 2, bytes.size - 2, Charsets.UTF_16LE)
+            }
+            if (bytes.size >= 2 && bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte()) {
+                return String(bytes, 2, bytes.size - 2, Charsets.UTF_16BE)
+            }
+
+            val utf8 = String(bytes, Charsets.UTF_8)
+            if (utf8.count { it == '\uFFFD' } > 3) {
+                return runCatching { String(bytes, Charset.forName("GB18030")) }
+                    .recoverCatching { String(bytes, Charset.forName("GBK")) }
+                    .getOrDefault(utf8)
+            }
+            return utf8
+        }
+
+        private fun decodeEpubBytes(bytes: ByteArray): String {
+            val chapters = mutableListOf<Pair<String, String>>()
+            ZipInputStream(ByteArrayInputStream(bytes)).use { zis ->
+                while (true) {
+                    val entry = zis.nextEntry ?: break
+                    val name = entry.name.lowercase(Locale.ROOT)
+                    if (!entry.isDirectory &&
+                        (name.endsWith(".xhtml") || name.endsWith(".html") || name.endsWith(".htm")) &&
+                        !name.contains("toc") && !name.contains("nav")
+                    ) {
+                        val entryBytes = readIntoVec(zis)
+                        val rawHtml = decodeTextBytes(entryBytes)
+                        val cleaned = htmlToPlainText(rawHtml)
+                        if (cleaned.length > 20) {
+                            chapters.add(entry.name to cleaned)
+                        }
+                    }
+                    zis.closeEntry()
+                }
+            }
+            if (chapters.isEmpty()) return ""
+            return chapters.sortedBy { it.first }
+                .mapIndexed { idx, (_, body) ->
+                    "第 ${idx + 1} 节\n$body"
+                }
+                .joinToString("\n\n")
+        }
+
+        private fun htmlToPlainText(html: String): String {
+            val withoutScripts = html
+                .replace(Regex("(?is)<(script|style|head)[^>]*>.*?</\\1>"), "")
+                .replace(Regex("(?i)</(p|div|h1|h2|h3|h4|li|tr|br\\s*/?)>"), "\n")
+                .replace(Regex("(?i)<br\\s*/?>"), "\n")
+                .replace(Regex("<[^>]+>"), "")
+                .replace("&nbsp;", " ")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&amp;", "&")
+                .replace("&quot;", "\"")
+                .replace("&#39;", "'")
+            return withoutScripts.lines()
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .joinToString("\n\n")
+        }
+    }
 
     data class ChapterItem(
         val title: String,
@@ -71,9 +200,16 @@ class ReaderActivity : AppActivity() {
     private var currentCharOffset: Int = 0
     private var bookmarks: MutableList<ReaderBookmark> = mutableListOf()
 
-    // Moon+ Reader (静读天下) Overlay State: Hidden by default during reading!
+    // Readext specific states
     private var isOverlayMenuVisible: Boolean = false
     private var currentBrightness: Float = 0.75f
+    private var isBionicFocusMode: Boolean = false
+    private var lastSearchKeyword: String = ""
+
+    // Readext TTS Read-Aloud Engine
+    private var ttsEngine: TextToSpeech? = null
+    private var isTtsReady: Boolean = false
+    private var isTtsSpeaking: Boolean = false
 
     private val uiHandler = Handler(Looper.getMainLooper())
 
@@ -88,20 +224,22 @@ class ReaderActivity : AppActivity() {
     private lateinit var miniChapterText: TextView
     private lateinit var miniProgressText: TextView
 
-    // Moon+ Reader Floating Top & Bottom Overlay Menus (Hidden by default)
+    // Readext Floating Top & Bottom Overlay Menus (Hidden by default)
     private lateinit var topOverlayBar: LinearLayout
     private lateinit var overlayTitleText: TextView
     private lateinit var overlaySubtitleText: TextView
+    private lateinit var ttsPillBtn: TextView
+    private lateinit var bionicPillBtn: TextView
 
     private lateinit var bottomOverlayBar: LinearLayout
     private lateinit var pageSeekBar: SeekBar
     private lateinit var seekProgressLabel: TextView
 
-    // Toast/Banner for Memory Cache Restored & Brightness Gesture HUD
+    // Toast/Banner for Readext HUD
     private lateinit var floatingToastCard: MaterialCardView
     private lateinit var floatingToastText: TextView
 
-    // Local Phone Bookshelf / File Scanner Overlay (shown when opened from drawer without a file)
+    // Readext Settings & Progress History Management Screen (shown when launched from Home/Drawer)
     private lateinit var phoneBookshelfOverlay: LinearLayout
     private lateinit var bookshelfListContainer: LinearLayout
 
@@ -111,22 +249,52 @@ class ReaderActivity : AppActivity() {
         }.start()
     }
 
-    private val pickBookLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            phoneBookshelfOverlay.visibility = View.GONE
-            loadBookFromUri(uri)
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         preferences = ReaderProgressStore.loadPreferences(this)
+        applyKeepScreenOnPreference()
 
-        setContentView(buildMoonReaderLayout())
+        runCatching {
+            ttsEngine = TextToSpeech(this, this)
+        }
+
+        setContentView(buildReadextLayout())
         applyThemeAndTypography()
         resolveInitialBook(intent)
+    }
+
+    override fun onInit(status: Int) {
+        if (status == TextToSpeech.SUCCESS) {
+            val res = ttsEngine?.setLanguage(Locale.SIMPLIFIED_CHINESE)
+            if (res == TextToSpeech.LANG_MISSING_DATA || res == TextToSpeech.LANG_NOT_SUPPORTED) {
+                ttsEngine?.language = Locale.getDefault()
+            }
+            ttsEngine?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) {}
+                override fun onDone(utteranceId: String?) {
+                    uiHandler.post {
+                        if (isTtsSpeaking && currentPageIndex < pages.lastIndex) {
+                            turnToNextPage()
+                            speakCurrentPage()
+                        } else {
+                            stopReadextTts()
+                        }
+                    }
+                }
+                override fun onError(utteranceId: String?) {
+                    uiHandler.post { stopReadextTts() }
+                }
+            })
+            isTtsReady = true
+        }
+    }
+
+    private fun applyKeepScreenOnPreference() {
+        if (preferences.keepScreenOn) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -142,11 +310,15 @@ class ReaderActivity : AppActivity() {
 
     override fun onDestroy() {
         uiHandler.removeCallbacksAndMessages(null)
+        runCatching {
+            ttsEngine?.stop()
+            ttsEngine?.shutdown()
+        }
         super.onDestroy()
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (phoneBookshelfOverlay.visibility == View.VISIBLE) {
+        if (phoneBookshelfOverlay.visibility == View.VISIBLE || !preferences.volumeKeyPageTurn) {
             return super.onKeyDown(keyCode, event)
         }
         if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
@@ -163,7 +335,7 @@ class ReaderActivity : AppActivity() {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
-    private fun buildMoonReaderLayout(): View {
+    private fun buildReadextLayout(): View {
         rootFrame = FrameLayout(this).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -171,7 +343,7 @@ class ReaderActivity : AppActivity() {
             )
         }
 
-        // 1. Fullscreen Immersive Reading Canvas (100% dedicated to reading)
+        // 1. Fullscreen Immersive Readext Canvas (100% dedicated to reading)
         readingCanvasLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = FrameLayout.LayoutParams(
@@ -180,7 +352,7 @@ class ReaderActivity : AppActivity() {
             )
         }
 
-        // Subtle Moon+ Reader Top Mini Header (Book Title, 20dp high)
+        // Subtle Readext Top Mini Header
         topMiniHeaderText = TextView(this).apply {
             textSize = 11f
             maxLines = 1
@@ -206,7 +378,7 @@ class ReaderActivity : AppActivity() {
             setPadding(dp(20), dp(8), dp(20), dp(8))
             gravity = Gravity.TOP or Gravity.START
         }
-        setupMoonReaderTouchGestures(pagedTextView)
+        setupReadextTouchGestures(pagedTextView)
         readerStageFrame.addView(pagedTextView)
 
         verticalScrollView = ScrollView(this).apply {
@@ -241,7 +413,7 @@ class ReaderActivity : AppActivity() {
         readerStageFrame.addView(verticalScrollView)
         readingCanvasLayout.addView(readerStageFrame)
 
-        // Subtle Moon+ Reader Bottom Mini Status Bar (24dp high, never blocks reading)
+        // Subtle Readext Bottom Mini Status Bar
         bottomMiniStatusRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -263,12 +435,13 @@ class ReaderActivity : AppActivity() {
 
         rootFrame.addView(readingCanvasLayout)
 
-        // 2. Floating HUD / Memory Restored Pill (auto-fades after 1.8s)
+        // 2. Floating Readext HUD Card
         floatingToastCard = MaterialCardView(this).apply {
             radius = dp(18).toFloat()
-            setCardBackgroundColor(Color.parseColor("#D90F172A"))
+            setCardBackgroundColor(Color.parseColor("#E6064E3B"))
             cardElevation = dp(6).toFloat()
-            strokeWidth = 0
+            strokeWidth = dp(1)
+            strokeColor = Color.parseColor("#10B981")
             visibility = View.GONE
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -289,11 +462,11 @@ class ReaderActivity : AppActivity() {
         floatingToastCard.addView(floatingToastText)
         rootFrame.addView(floatingToastCard)
 
-        // 3. Moon+ Reader Floating Top Bar (Hidden by default; shown only when center screen tapped)
+        // 3. Readext Floating Top Bar (Hidden by default; shown only when center screen tapped)
         topOverlayBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(Color.parseColor("#E61E293B"))
+            setBackgroundColor(Color.parseColor("#EE0F172A"))
             setPadding(dp(10), dp(10), dp(12), dp(10))
             visibility = View.GONE
             layoutParams = FrameLayout.LayoutParams(
@@ -306,8 +479,8 @@ class ReaderActivity : AppActivity() {
             text = "←"
             textSize = 20f
             setTypeface(typeface, Typeface.BOLD)
-            setTextColor(Color.WHITE)
-            setPadding(dp(10), dp(4), dp(12), dp(4))
+            setTextColor(Color.parseColor("#10B981"))
+            setPadding(dp(10), dp(4), dp(10), dp(4))
             setOnClickListener {
                 persistReadingProgress()
                 finish()
@@ -318,39 +491,47 @@ class ReaderActivity : AppActivity() {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
         overlayTitleText = TextView(this).apply {
-            textSize = 15f
+            textSize = 14.5f
             setTypeface(typeface, Typeface.BOLD)
             setTextColor(Color.WHITE)
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
         }
         overlaySubtitleText = TextView(this).apply {
-            textSize = 11.5f
-            setTextColor(Color.parseColor("#94A3B8"))
+            textSize = 11f
+            setTextColor(Color.parseColor("#6EE7B7"))
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
         }
         titleCol.addView(overlayTitleText)
         titleCol.addView(overlaySubtitleText)
 
-        val addBookmarkBtn = makeTopPill("🔖 加书签") {
+        val searchBtn = makeTopPill("🔍") {
+            setOverlayMenuVisibility(false)
+            showReadextSearchDialog()
+        }
+        bionicPillBtn = makeTopPill("👁️") {
+            toggleBionicFocusMode()
+        }
+        ttsPillBtn = makeTopPill("🔊") {
+            toggleReadextTts()
+        }
+        val addBookmarkBtn = makeTopPill("🔖") {
             addBookmarkAtCurrentPosition()
         }
-        val editBtn = makeTopPill("✏️ 编辑") {
-            if (currentFilePath.isNotEmpty() && File(currentFilePath).exists()) {
-                startActivity(DocumentPreviewActivity.createIntent(this, filePath = currentFilePath))
-            }
-        }
+
         topOverlayBar.addView(backBtn)
         topOverlayBar.addView(titleCol)
+        topOverlayBar.addView(searchBtn)
+        topOverlayBar.addView(bionicPillBtn)
+        topOverlayBar.addView(ttsPillBtn)
         topOverlayBar.addView(addBookmarkBtn)
-        topOverlayBar.addView(editBtn)
         rootFrame.addView(topOverlayBar)
 
-        // 4. Moon+ Reader Floating Bottom Control Panel (Hidden by default; shown only when center tapped)
+        // 4. Readext Floating Bottom Control Panel (Hidden by default)
         bottomOverlayBar = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#EB1E293B"))
+            setBackgroundColor(Color.parseColor("#F00F172A"))
             setPadding(dp(14), dp(10), dp(14), dp(14))
             visibility = View.GONE
             layoutParams = FrameLayout.LayoutParams(
@@ -366,7 +547,7 @@ class ReaderActivity : AppActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, 0, 0, dp(8))
         }
-        val prevChapBtn = makeTopPill("上一章") {
+        val prevChapBtn = makeTopPill("⏮") {
             jumpToAdjacentChapter(-1)
         }
         pageSeekBar = SeekBar(this).apply {
@@ -385,7 +566,7 @@ class ReaderActivity : AppActivity() {
                 }
             })
         }
-        val nextChapBtn = makeTopPill("下一章") {
+        val nextChapBtn = makeTopPill("⏭") {
             jumpToAdjacentChapter(1)
         }
         seekRow.addView(prevChapBtn)
@@ -395,40 +576,40 @@ class ReaderActivity : AppActivity() {
 
         seekProgressLabel = TextView(this).apply {
             textSize = 11.5f
-            setTextColor(Color.parseColor("#CBD5E1"))
+            setTextColor(Color.parseColor("#A7F3D0"))
             gravity = Gravity.CENTER
             setPadding(0, 0, 0, dp(8))
         }
         bottomOverlayBar.addView(seekProgressLabel)
 
-        // Row 2: Moon+ Reader 5 Bottom Menu Tabs
+        // Row 2: Readext 5 Bottom Menu Icon Tabs
         val tabsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        tabsRow.addView(makeMoonBottomTab("📑", "目录/记忆") {
+        tabsRow.addView(makeReadextBottomTab("📑") {
             setOverlayMenuVisibility(false)
             showTocAndMemoryDialog()
         })
-        tabsRow.addView(makeMoonBottomTab("Aa", "排版字号") {
+        tabsRow.addView(makeReadextBottomTab("Aa") {
             setOverlayMenuVisibility(false)
             showVisualTypographySheet()
         })
-        tabsRow.addView(makeMoonBottomTab("📖", "翻页方式") {
+        tabsRow.addView(makeReadextBottomTab("📖") {
             setOverlayMenuVisibility(false)
             showPageTurnModeSheet()
         })
-        tabsRow.addView(makeMoonBottomTab("🌗", "日夜护眼") {
+        tabsRow.addView(makeReadextBottomTab("🌗") {
             cycleThemeQuickly()
         })
-        tabsRow.addView(makeMoonBottomTab("📂", "手机文件") {
+        tabsRow.addView(makeReadextBottomTab("⚙️") {
             setOverlayMenuVisibility(false)
             showPhoneBookshelfOverlay()
         })
         bottomOverlayBar.addView(tabsRow)
         rootFrame.addView(bottomOverlayBar)
 
-        // 5. Real Phone Bookshelf & Local File Scanner Overlay (when opened without a specific file)
+        // 5. Readext Settings & Progress History Management Screen (shown when launched from Home/Drawer)
         phoneBookshelfOverlay = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.parseColor("#F8FAFC"))
@@ -441,8 +622,8 @@ class ReaderActivity : AppActivity() {
         val shelfHeader = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(Color.parseColor("#1E293B"))
-            setPadding(dp(14), dp(12), dp(14), dp(12))
+            setBackgroundColor(Color.parseColor("#064E3B"))
+            setPadding(dp(14), dp(14), dp(14), dp(14))
         }
         val shelfBack = TextView(this).apply {
             text = "←"
@@ -457,28 +638,25 @@ class ReaderActivity : AppActivity() {
                 }
             }
         }
-        val shelfTitle = TextView(this).apply {
-            text = "静读天下书架 · 手机本地书籍与记忆缓存"
-            textSize = 16f
-            setTypeface(typeface, Typeface.BOLD)
-            setTextColor(Color.WHITE)
+        val shelfTitleCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
-        val pickDocBtn = MaterialButton(
-            this,
-            null,
-            com.google.android.material.R.attr.materialButtonOutlinedStyle
-        ).apply {
-            text = "选择文件"
-            textSize = 12f
+        val shelfTitle = TextView(this).apply {
+            text = "📗 Readext 阅读器设置 · 记录与进度管理"
+            textSize = 15.5f
+            setTypeface(typeface, Typeface.BOLD)
             setTextColor(Color.WHITE)
-            setOnClickListener {
-                pickBookLauncher.launch(arrayOf("text/*", "*/*"))
-            }
         }
+        val shelfSub = TextView(this).apply {
+            text = "基于 thoughtram/read-ext 流式解析引擎 · 支持 TXT / MD / EPUB / LOG"
+            textSize = 11f
+            setTextColor(Color.parseColor("#A7F3D0"))
+        }
+        shelfTitleCol.addView(shelfTitle)
+        shelfTitleCol.addView(shelfSub)
         shelfHeader.addView(shelfBack)
-        shelfHeader.addView(shelfTitle)
-        shelfHeader.addView(pickDocBtn)
+        shelfHeader.addView(shelfTitleCol)
         phoneBookshelfOverlay.addView(shelfHeader)
 
         val shelfScroll = ScrollView(this).apply {
@@ -490,11 +668,24 @@ class ReaderActivity : AppActivity() {
         }
         bookshelfListContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(12), dp(14), dp(24))
+            setPadding(dp(14), dp(12), dp(14), dp(28))
         }
         shelfScroll.addView(bookshelfListContainer)
         phoneBookshelfOverlay.addView(shelfScroll)
         rootFrame.addView(phoneBookshelfOverlay)
+
+        // Apply status bar & navigation bar safe insets so top/bottom controls are never obscured
+        ViewCompat.setOnApplyWindowInsetsListener(rootFrame) { _, insets ->
+            val sysBars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            val topSafe = sysBars.top.coerceAtLeast(dp(24))
+            val bottomSafe = sysBars.bottom
+            readingCanvasLayout.setPadding(sysBars.left, topSafe, sysBars.right, bottomSafe)
+            topOverlayBar.setPadding(sysBars.left + dp(10), topSafe + dp(8), sysBars.right + dp(12), dp(10))
+            bottomOverlayBar.setPadding(sysBars.left + dp(14), dp(10), sysBars.right + dp(14), bottomSafe + dp(14))
+            shelfHeader.setPadding(sysBars.left + dp(14), topSafe + dp(10), sysBars.right + dp(14), dp(12))
+            bookshelfListContainer.setPadding(dp(14), dp(12), dp(14), bottomSafe + dp(28))
+            insets
+        }
 
         return rootFrame
     }
@@ -502,41 +693,36 @@ class ReaderActivity : AppActivity() {
     private fun makeTopPill(label: String, onClick: () -> Unit): TextView {
         return TextView(this).apply {
             text = label
-            textSize = 12f
+            textSize = 14f
             setTypeface(typeface, Typeface.BOLD)
             setTextColor(Color.WHITE)
-            setPadding(dp(10), dp(5), dp(10), dp(5))
+            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(6), dp(10), dp(6))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { marginStart = dp(6) }
+            ).apply { marginStart = dp(5) }
             background = GradientDrawable().apply {
                 cornerRadius = dp(14).toFloat()
-                setColor(Color.parseColor("#334155"))
+                setColor(Color.parseColor("#1E293B"))
+                setStroke(dp(1), Color.parseColor("#10B981"))
             }
             setOnClickListener { onClick() }
         }
     }
 
-    private fun makeMoonBottomTab(icon: String, label: String, onClick: () -> Unit): View {
+    private fun makeReadextBottomTab(icon: String, onClick: () -> Unit): View {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(dp(4), dp(6), dp(4), dp(4))
+            setPadding(dp(4), dp(8), dp(4), dp(8))
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             addView(TextView(context).apply {
                 text = icon
-                textSize = 16f
+                textSize = 18f
                 setTypeface(typeface, Typeface.BOLD)
-                setTextColor(Color.WHITE)
+                setTextColor(Color.parseColor("#10B981"))
                 gravity = Gravity.CENTER
-            })
-            addView(TextView(context).apply {
-                text = label
-                textSize = 11f
-                setTextColor(Color.parseColor("#CBD5E1"))
-                gravity = Gravity.CENTER
-                setPadding(0, dp(2), 0, 0)
             })
             setOnClickListener { onClick() }
         }
@@ -557,16 +743,15 @@ class ReaderActivity : AppActivity() {
     }
 
     /**
-     * Moon+ Reader 3-Zone Touch + Left-Edge Brightness Slide + Horizontal Swipe Page Turn
+     * Readext 3-Zone Touch + Left-Edge Brightness Slide + Horizontal Swipe Page Turn
      */
-    private fun setupMoonReaderTouchGestures(view: View) {
+    private fun setupReadextTouchGestures(view: View) {
         val detector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(e: MotionEvent): Boolean = true
 
             override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
                 val w = view.width.coerceAtLeast(1)
                 when {
-                    // Left 1/3 zone: Previous Page (and hide overlay menu if open)
                     e.x < w * 0.33f -> {
                         if (isOverlayMenuVisible) {
                             setOverlayMenuVisibility(false)
@@ -574,7 +759,6 @@ class ReaderActivity : AppActivity() {
                             turnToPreviousPage()
                         }
                     }
-                    // Right 1/3 zone: Next Page (and hide overlay menu if open)
                     e.x > w * 0.67f -> {
                         if (isOverlayMenuVisible) {
                             setOverlayMenuVisibility(false)
@@ -582,7 +766,6 @@ class ReaderActivity : AppActivity() {
                             turnToNextPage()
                         }
                     }
-                    // Center 1/3 zone: Toggle Moon+ Reader Overlay Menu!
                     else -> {
                         setOverlayMenuVisibility(!isOverlayMenuVisible)
                     }
@@ -599,7 +782,6 @@ class ReaderActivity : AppActivity() {
                 val start = e1 ?: return false
                 val w = view.width.coerceAtLeast(1)
                 val h = view.height.coerceAtLeast(1)
-                // Moon+ Reader signature feature: Vertical slide along left edge (left 16% of screen) adjusts brightness!
                 if (start.x < w * 0.16f && abs(distanceY) > abs(distanceX)) {
                     val delta = distanceY / (h * 0.75f)
                     currentBrightness = (currentBrightness + delta).coerceIn(0.05f, 1.0f)
@@ -607,7 +789,7 @@ class ReaderActivity : AppActivity() {
                     lp.screenBrightness = currentBrightness
                     window.attributes = lp
                     val pct = (currentBrightness * 100f).toInt()
-                    showFloatingHud("☀️ 阅读亮度 $pct%", 900L)
+                    showFloatingHud("☀️ Readext 阅读亮度 $pct%", 900L)
                     return true
                 }
                 return false
@@ -641,6 +823,208 @@ class ReaderActivity : AppActivity() {
         }
     }
 
+    private fun toggleBionicFocusMode() {
+        isBionicFocusMode = !isBionicFocusMode
+        bionicPillBtn.background = GradientDrawable().apply {
+            cornerRadius = dp(14).toFloat()
+            setColor(Color.parseColor(if (isBionicFocusMode) "#059669" else "#1E293B"))
+            setStroke(dp(1), Color.parseColor("#10B981"))
+        }
+        renderCurrentPageText()
+        showFloatingHud(
+            if (isBionicFocusMode) "👁️ Readext 仿生专注速读已开启（词首高亮加速阅读）"
+            else "👁️ 已恢复标准排版显示"
+        )
+    }
+
+    private fun toggleReadextTts() {
+        if (isTtsSpeaking) {
+            stopReadextTts()
+            showFloatingHud("🔇 已停止 Readext 语音朗读")
+            return
+        }
+        if (!isTtsReady || ttsEngine == null) {
+            showFloatingHud("语音引擎正在初始化，请稍候重试")
+            return
+        }
+        isTtsSpeaking = true
+        ttsPillBtn.text = "⏹"
+        ttsPillBtn.background = GradientDrawable().apply {
+            cornerRadius = dp(14).toFloat()
+            setColor(Color.parseColor("#059669"))
+            setStroke(dp(1), Color.parseColor("#A7F3D0"))
+        }
+        speakCurrentPage()
+        showFloatingHud("🔊 Readext 语音听书已开启（读完本页自动翻页）")
+    }
+
+    private fun speakCurrentPage() {
+        if (!isTtsSpeaking || pages.isEmpty()) return
+        val slice = pages[currentPageIndex.coerceIn(0, pages.lastIndex)]
+        val textToRead = slice.text.take(3500)
+        ttsEngine?.speak(textToRead, TextToSpeech.QUEUE_FLUSH, null, "READEXT_PAGE_$currentPageIndex")
+    }
+
+    private fun stopReadextTts() {
+        isTtsSpeaking = false
+        runCatching { ttsEngine?.stop() }
+        if (::ttsPillBtn.isInitialized) {
+            ttsPillBtn.text = "🔊"
+            ttsPillBtn.background = GradientDrawable().apply {
+                cornerRadius = dp(14).toFloat()
+                setColor(Color.parseColor("#1E293B"))
+                setStroke(dp(1), Color.parseColor("#10B981"))
+            }
+        }
+    }
+
+    private fun showReadextSearchDialog() {
+        if (fullText.isEmpty() || pages.isEmpty()) return
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(12), dp(20), dp(8))
+        }
+        val input = EditText(this).apply {
+            hint = "输入要搜索的关键词或句子..."
+            setText(lastSearchKeyword)
+            textSize = 14f
+        }
+        val resultSummary = TextView(this).apply {
+            text = "输入关键词后点击「查找」，可快速定位到对应页码"
+            textSize = 12f
+            setTextColor(Color.parseColor("#059669"))
+            setPadding(0, dp(6), 0, dp(6))
+        }
+        val resultScroll = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(240)
+            )
+        }
+        val resultList = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        resultScroll.addView(resultList)
+        layout.addView(input)
+        layout.addView(resultSummary)
+        layout.addView(resultScroll)
+
+        var dialogRef: androidx.appcompat.app.AlertDialog? = null
+
+        fun performSearch(kw: String) {
+            val query = kw.trim()
+            lastSearchKeyword = query
+            resultList.removeAllViews()
+            if (query.isEmpty()) {
+                resultSummary.text = "请输入非空关键词"
+                return
+            }
+            val matches = mutableListOf<Pair<PageSlice, String>>()
+            for (page in pages) {
+                val pos = page.text.indexOf(query, ignoreCase = true)
+                if (pos >= 0) {
+                    val start = (pos - 16).coerceAtLeast(0)
+                    val end = (pos + query.length + 28).coerceAtMost(page.text.length)
+                    val snippet = page.text.substring(start, end).replace('\n', ' ')
+                    matches.add(page to snippet)
+                    if (matches.size >= 50) break
+                }
+            }
+            resultSummary.text = "🔍 共找到 ${matches.size}${if (matches.size >= 50) "+" else ""} 处匹配结果（点击直达对应页）："
+            for ((slice, snippet) in matches) {
+                val itemView = TextView(this).apply {
+                    text = "第 ${slice.index + 1} 页 · [${slice.chapterTitle}]\n…$snippet…"
+                    textSize = 12.5f
+                    setTextColor(Color.parseColor("#1E293B"))
+                    setPadding(dp(10), dp(8), dp(10), dp(8))
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(8).toFloat()
+                        setColor(Color.parseColor("#F1F5F9"))
+                    }
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    ).apply { bottomMargin = dp(6) }
+                    setOnClickListener {
+                        jumpToPageIndex(slice.index, animate = true)
+                        dialogRef?.dismiss()
+                        showFloatingHud("🔍 已定位到第 ${slice.index + 1} 页「$query」")
+                    }
+                }
+                resultList.addView(itemView)
+            }
+        }
+
+        if (lastSearchKeyword.isNotEmpty()) {
+            performSearch(lastSearchKeyword)
+        }
+
+        dialogRef = MaterialAlertDialogBuilder(this)
+            .setTitle("🔍 Readext 全文流式检索")
+            .setView(layout)
+            .setPositiveButton("查找", null)
+            .setNeutralButton("清除高亮") { _, _ ->
+                lastSearchKeyword = ""
+                renderCurrentPageText()
+            }
+            .setNegativeButton(R.string.close, null)
+            .create()
+
+        dialogRef.show()
+        dialogRef.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE)?.setOnClickListener {
+            performSearch(input.text?.toString().orEmpty())
+            renderCurrentPageText()
+        }
+    }
+
+    private fun formatReadextSpannable(raw: String): CharSequence {
+        if (!isBionicFocusMode && lastSearchKeyword.isBlank()) {
+            return raw
+        }
+        val sb = SpannableStringBuilder(raw)
+        if (isBionicFocusMode) {
+            // Highlight prefix of English words and initial characters of clauses for Bionic Focus reading
+            val wordRegex = Regex("""([A-Za-z]{3,}|[\u4e00-\u9fa5]{2,})""")
+            for (match in wordRegex.findAll(raw)) {
+                val start = match.range.first
+                val len = match.value.length
+                val boldLen = (len / 2).coerceIn(1, 3)
+                sb.setSpan(
+                    StyleSpan(Typeface.BOLD),
+                    start,
+                    (start + boldLen).coerceAtMost(raw.length),
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+            }
+        }
+        if (lastSearchKeyword.isNotBlank()) {
+            val kw = lastSearchKeyword
+            var idx = raw.indexOf(kw, ignoreCase = true)
+            while (idx >= 0) {
+                sb.setSpan(
+                    ForegroundColorSpan(Color.parseColor("#10B981")),
+                    idx,
+                    (idx + kw.length).coerceAtMost(raw.length),
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                sb.setSpan(
+                    StyleSpan(Typeface.BOLD),
+                    idx,
+                    (idx + kw.length).coerceAtMost(raw.length),
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                idx = raw.indexOf(kw, idx + kw.length, ignoreCase = true)
+            }
+        }
+        return sb
+    }
+
+    private fun renderCurrentPageText() {
+        if (pages.isEmpty()) return
+        val slice = pages[currentPageIndex.coerceIn(0, pages.lastIndex)]
+        pagedTextView.text = formatReadextSpannable(slice.text)
+    }
+
     private fun applyThemeAndTypography() {
         val theme = preferences.theme
         val bgColor = Color.parseColor(theme.backgroundColorHex)
@@ -660,6 +1044,7 @@ class ReaderActivity : AppActivity() {
         verticalScrollTextView.setTextColor(txtColor)
         verticalScrollTextView.textSize = preferences.fontSizeSp
         verticalScrollTextView.setLineSpacing(0f, preferences.lineSpacingMultiplier)
+        bottomMiniStatusRow.visibility = if (preferences.showBottomMiniStatusBar) View.VISIBLE else View.GONE
     }
 
     private fun cycleThemeQuickly() {
@@ -668,7 +1053,7 @@ class ReaderActivity : AppActivity() {
         preferences = preferences.copy(theme = next)
         ReaderProgressStore.savePreferences(this, preferences)
         applyThemeAndTypography()
-        showFloatingHud("🎨 已切换阅读主题：${next.displayName}")
+        showFloatingHud("🎨 Readext 主题：${next.displayName}")
     }
 
     private fun updateFontSize(newSizeSp: Float) {
@@ -743,7 +1128,7 @@ class ReaderActivity : AppActivity() {
             return
         }
 
-        // Opened from Navigation Drawer without a file: show the Real Phone Bookshelf & Memory Cache History!
+        // Opened from Home Dashboard / Navigation Drawer without a file: show Readext Settings & History Management!
         showPhoneBookshelfOverlay()
     }
 
@@ -751,153 +1136,436 @@ class ReaderActivity : AppActivity() {
         phoneBookshelfOverlay.visibility = View.VISIBLE
         bookshelfListContainer.removeAllViews()
 
-        val pickRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 0, 0, dp(12))
-        }
-        val browseStorageBtn = MaterialButton(this).apply {
-            text = "📂 从手机存储选择文件打开 (.txt / .md / .log)"
+        // 1. Default Typography & Visual Theme Settings Card
+        val typographyCard = MaterialCardView(this).apply {
+            radius = dp(14).toFloat()
+            setCardBackgroundColor(Color.WHITE)
+            cardElevation = dp(2).toFloat()
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-            setOnClickListener {
-                pickBookLauncher.launch(arrayOf("text/*", "*/*"))
-            }
+            ).apply { bottomMargin = dp(14) }
         }
-        pickRow.addView(browseStorageBtn)
-        bookshelfListContainer.addView(pickRow)
+        val typoCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+        }
+        typoCol.addView(TextView(this).apply {
+            text = "📗 Readext 流式阅读引擎 · 默认排版与字号设置"
+            textSize = 15f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Color.parseColor("#064E3B"))
+            setPadding(0, 0, 0, dp(4))
+        })
+        typoCol.addView(TextView(this).apply {
+            text = "基于 thoughtram/read-ext 移植适配，支持 TXT / MD / EPUB / LOG 流式解码、全文搜索、仿生速读与 TTS 听书："
+            textSize = 12f
+            setTextColor(Color.parseColor("#64748B"))
+            setPadding(0, 0, 0, dp(12))
+        })
 
-        val df = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
+        // Live Typography Preview Box
+        val sampleBox = TextView(this).apply {
+            text = "Readext 排版预览：当前字号 ${preferences.fontSizeSp.toInt()}sp · 行距 ${preferences.lineSpacingMultiplier}x · 主题「${preferences.theme.displayName}」 · 翻页「${preferences.pageTurnMode.displayName}」"
+            textSize = preferences.fontSizeSp.coerceIn(13f, 24f)
+            setLineSpacing(0f, preferences.lineSpacingMultiplier)
+            setTextColor(Color.parseColor(preferences.theme.textColorHex))
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(10).toFloat()
+                setColor(Color.parseColor(preferences.theme.backgroundColorHex))
+                setStroke(dp(1), Color.parseColor("#10B981"))
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(12) }
+        }
+        typoCol.addView(sampleBox)
 
-        // Section 1: Cached Reading History (Memory Cache)
-        val cachedHistory = ReaderProgressStore.getAllBookProgress(this)
-            .filter { it.filePath.isNotEmpty() && File(it.filePath).exists() }
-        if (cachedHistory.isNotEmpty()) {
-            bookshelfListContainer.addView(TextView(this).apply {
-                text = "🔖 最近阅读记忆缓存（点击继续上次阅读进度）"
-                textSize = 14f
+        // Font size controls
+        val fontRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(10))
+        }
+        fontRow.addView(TextView(this).apply {
+            text = "默认字号 (${preferences.fontSizeSp.toInt()} sp)"
+            textSize = 13.5f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Color.parseColor("#1E293B"))
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        fontRow.addView(MaterialButton(
+            this,
+            null,
+            com.google.android.material.R.attr.materialButtonOutlinedStyle
+        ).apply {
+            text = "A- 缩小"
+            textSize = 12f
+            setOnClickListener {
+                updateFontSize(preferences.fontSizeSp - 2f)
+                showPhoneBookshelfOverlay()
+            }
+        })
+        fontRow.addView(MaterialButton(
+            this,
+            null,
+            com.google.android.material.R.attr.materialButtonOutlinedStyle
+        ).apply {
+            text = "A+ 放大"
+            textSize = 12f
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { marginStart = dp(8) }
+            setOnClickListener {
+                updateFontSize(preferences.fontSizeSp + 2f)
+                showPhoneBookshelfOverlay()
+            }
+        })
+        typoCol.addView(fontRow)
+
+        // Line Spacing selector
+        typoCol.addView(TextView(this).apply {
+            text = "段落行距倍速:"
+            textSize = 13f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Color.parseColor("#334155"))
+            setPadding(0, dp(4), 0, dp(6))
+        })
+        val spacingRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 0, 0, dp(10))
+        }
+        listOf(1.25f to "紧凑 1.25x", 1.5f to "标准 1.5x", 1.85f to "宽松 1.85x").forEach { (mult, label) ->
+            val selected = abs(preferences.lineSpacingMultiplier - mult) < 0.08f
+            val chip = TextView(this).apply {
+                text = if (selected) "✓ $label" else label
+                textSize = 12f
+                gravity = Gravity.CENTER
+                setTypeface(typeface, if (selected) Typeface.BOLD else Typeface.NORMAL)
+                setTextColor(if (selected) Color.WHITE else Color.parseColor("#334155"))
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(8).toFloat()
+                    setColor(if (selected) Color.parseColor("#059669") else Color.parseColor("#F1F5F9"))
+                }
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginEnd = dp(6)
+                }
+                setOnClickListener {
+                    updateLineSpacing(mult)
+                    showPhoneBookshelfOverlay()
+                }
+            }
+            spacingRow.addView(chip)
+        }
+        typoCol.addView(spacingRow)
+
+        // Theme selector
+        typoCol.addView(TextView(this).apply {
+            text = "默认阅读背景主题:"
+            textSize = 13f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Color.parseColor("#334155"))
+            setPadding(0, dp(4), 0, dp(6))
+        })
+        val themeRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 0, 0, dp(10))
+        }
+        for (t in ReaderTheme.entries) {
+            val selected = preferences.theme == t
+            val btn = TextView(this).apply {
+                text = if (selected) "✓ ${t.displayName}" else t.displayName
+                textSize = 11.5f
                 setTypeface(typeface, Typeface.BOLD)
-                setTextColor(Color.parseColor("#0F172A"))
-                setPadding(0, dp(4), 0, dp(8))
+                gravity = Gravity.CENTER
+                setTextColor(Color.parseColor(t.textColorHex))
+                setPadding(dp(6), dp(10), dp(6), dp(10))
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginEnd = dp(6)
+                }
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(8).toFloat()
+                    setColor(Color.parseColor(t.backgroundColorHex))
+                    setStroke(dp(if (selected) 2 else 1), Color.parseColor(if (selected) "#059669" else "#94A3B8"))
+                }
+                setOnClickListener {
+                    preferences = preferences.copy(theme = t)
+                    ReaderProgressStore.savePreferences(this@ReaderActivity, preferences)
+                    applyThemeAndTypography()
+                    showPhoneBookshelfOverlay()
+                }
+            }
+            themeRow.addView(btn)
+        }
+        typoCol.addView(themeRow)
+
+        // Page Turn Mode selector
+        typoCol.addView(TextView(this).apply {
+            text = "默认翻页模式:"
+            textSize = 13f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Color.parseColor("#334155"))
+            setPadding(0, dp(4), 0, dp(6))
+        })
+        val modeRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        for (m in PageTurnMode.entries) {
+            val selected = preferences.pageTurnMode == m
+            val chip = TextView(this).apply {
+                text = if (selected) "✓ ${m.displayName}" else m.displayName
+                textSize = 11.5f
+                gravity = Gravity.CENTER
+                setTypeface(typeface, if (selected) Typeface.BOLD else Typeface.NORMAL)
+                setTextColor(if (selected) Color.WHITE else Color.parseColor("#334155"))
+                setPadding(dp(6), dp(8), dp(6), dp(8))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(8).toFloat()
+                    setColor(if (selected) Color.parseColor("#059669") else Color.parseColor("#F1F5F9"))
+                }
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginEnd = dp(6)
+                }
+                setOnClickListener {
+                    updatePageTurnMode(m)
+                    showPhoneBookshelfOverlay()
+                }
+            }
+            modeRow.addView(chip)
+        }
+        typoCol.addView(modeRow)
+        typographyCard.addView(typoCol)
+        bookshelfListContainer.addView(typographyCard)
+
+        // 2. Reading Behavior Switches Card
+        val behaviorCard = MaterialCardView(this).apply {
+            radius = dp(14).toFloat()
+            setCardBackgroundColor(Color.WHITE)
+            cardElevation = dp(2).toFloat()
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(14) }
+        }
+        val behaviorCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+        }
+        behaviorCol.addView(TextView(this).apply {
+            text = "⚙️ Readext 阅读交互与流式特性开关"
+            textSize = 15f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Color.parseColor("#0F172A"))
+            setPadding(0, 0, 0, dp(6))
+        })
+
+        fun addSwitchRow(title: String, checked: Boolean, onToggle: (Boolean) -> Unit) {
+            val cb = CheckBox(this).apply {
+                text = title
+                textSize = 13.5f
+                setTextColor(Color.parseColor("#1E293B"))
+                isChecked = checked
+                setPadding(dp(6), dp(6), dp(6), dp(6))
+                setOnCheckedChangeListener { _, isChecked ->
+                    onToggle(isChecked)
+                }
+            }
+            behaviorCol.addView(cb)
+        }
+
+        addSwitchRow("自动记忆并在下次打开时恢复阅读进度", preferences.autoRestoreProgress) { enabled ->
+            preferences = preferences.copy(autoRestoreProgress = enabled)
+            ReaderProgressStore.savePreferences(this, preferences)
+        }
+        addSwitchRow("启用 Readext 仿生专注速读模式 (词首加粗引导视线)", isBionicFocusMode) { enabled ->
+            isBionicFocusMode = enabled
+            renderCurrentPageText()
+        }
+        addSwitchRow("使用手机音量加/减键上下翻页", preferences.volumeKeyPageTurn) { enabled ->
+            preferences = preferences.copy(volumeKeyPageTurn = enabled)
+            ReaderProgressStore.savePreferences(this, preferences)
+        }
+        addSwitchRow("阅读时保持屏幕常亮不熄屏", preferences.keepScreenOn) { enabled ->
+            preferences = preferences.copy(keepScreenOn = enabled)
+            ReaderProgressStore.savePreferences(this, preferences)
+            applyKeepScreenOnPreference()
+        }
+        addSwitchRow("显示底部极简章节与页码状态栏", preferences.showBottomMiniStatusBar) { enabled ->
+            preferences = preferences.copy(showBottomMiniStatusBar = enabled)
+            ReaderProgressStore.savePreferences(this, preferences)
+            applyThemeAndTypography()
+        }
+        behaviorCard.addView(behaviorCol)
+        bookshelfListContainer.addView(behaviorCard)
+
+        // 3. Reading History & Progress Cache Management Card
+        val historyCard = MaterialCardView(this).apply {
+            radius = dp(14).toFloat()
+            setCardBackgroundColor(Color.WHITE)
+            cardElevation = dp(2).toFloat()
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(14) }
+        }
+        val historyCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+        }
+
+        val cachedHistory = ReaderProgressStore.getAllBookProgress(this)
+        val headerRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(8))
+        }
+        headerRow.addView(TextView(this).apply {
+            text = "🔖 阅读记录与进度缓存 (${cachedHistory.size} 条)"
+            textSize = 15f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Color.parseColor("#0F172A"))
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        })
+
+        if (cachedHistory.isNotEmpty()) {
+            val clearAllBtn = TextView(this).apply {
+                text = "🧹 清除全部记录与进度"
+                textSize = 12f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(Color.parseColor("#B91C1C"))
+                setPadding(dp(10), dp(6), dp(10), dp(6))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(12).toFloat()
+                    setColor(Color.parseColor("#FEE2E2"))
+                }
+                setOnClickListener {
+                    MaterialAlertDialogBuilder(this@ReaderActivity)
+                        .setTitle("清除全部阅读记录与进度")
+                        .setMessage("确定要清空所有书籍的阅读历史记录、阅读进度百分比和书签缓存吗？")
+                        .setPositiveButton("确认清空") { _, _ ->
+                            ReaderProgressStore.clearAllBookProgress(this@ReaderActivity)
+                            if (fullText.isNotEmpty()) {
+                                bookmarks.clear()
+                                currentCharOffset = 0
+                                currentPageIndex = 0
+                                jumpToPageIndex(0, animate = false)
+                            }
+                            showToast("已清除全部阅读记录与进度缓存")
+                            showPhoneBookshelfOverlay()
+                        }
+                        .setNegativeButton("取消", null)
+                        .show()
+                }
+            }
+            headerRow.addView(clearAllBtn)
+        }
+        historyCol.addView(headerRow)
+
+        val df = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+        if (cachedHistory.isEmpty()) {
+            historyCol.addView(TextView(this).apply {
+                text = "暂无保存的阅读记录与进度缓存。\n当您在文件列表中点击打开 TXT / EPUB / MD 电子书阅读时，Readext 将自动在此记录进度。"
+                textSize = 12.5f
+                setTextColor(Color.parseColor("#64748B"))
+                setPadding(0, dp(8), 0, dp(8))
             })
+        } else {
             for (record in cachedHistory) {
-                val card = MaterialCardView(this).apply {
-                    radius = dp(10).toFloat()
-                    setCardBackgroundColor(Color.WHITE)
-                    strokeColor = Color.parseColor("#86EFAC")
-                    strokeWidth = dp(1)
+                val itemBox = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(12), dp(10), dp(12), dp(10))
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(10).toFloat()
+                        setColor(Color.parseColor("#F8FAFC"))
+                        setStroke(dp(1), Color.parseColor("#E2E8F0"))
+                    }
                     layoutParams = LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT
                     ).apply { bottomMargin = dp(8) }
-                    setOnClickListener {
-                        val f = File(record.filePath)
-                        if (f.exists()) {
-                            phoneBookshelfOverlay.visibility = View.GONE
-                            loadBookFromFile(f)
-                        }
-                    }
                 }
                 val pctStr = String.format(Locale.US, "%.1f%%", record.progressPercent)
-                val tv = TextView(this).apply {
-                    text = "📖 ${record.title}\n" +
-                        "上次进度: 第 ${record.pageIndex + 1}/${record.totalPages} 页 ($pctStr) · ${record.chapterTitle}\n" +
-                        "路径: ${record.filePath} · ${df.format(Date(record.updatedAtMillis))}"
-                    textSize = 12.5f
-                    setTextColor(Color.parseColor("#1E293B"))
-                    setPadding(dp(14), dp(10), dp(14), dp(10))
+                itemBox.addView(TextView(this).apply {
+                    text = "📗 ${record.title}"
+                    textSize = 13.5f
+                    setTypeface(typeface, Typeface.BOLD)
+                    setTextColor(Color.parseColor("#0F172A"))
+                })
+                itemBox.addView(TextView(this).apply {
+                    text = "进度: 第 ${record.pageIndex + 1}/${record.totalPages} 页 ($pctStr) · ${record.chapterTitle} · 书签 ${record.bookmarks.size} 个\n更新于 ${df.format(Date(record.updatedAtMillis))}"
+                    textSize = 11.5f
+                    setTextColor(Color.parseColor("#64748B"))
+                    setPadding(0, dp(2), 0, dp(8))
+                })
+
+                val actionRow = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.END
                 }
-                card.addView(tv)
-                bookshelfListContainer.addView(card)
-            }
-        }
-
-        // Section 2: Real Local Text/Book Files Scanned from Phone Storage
-        val scanHeader = TextView(this).apply {
-            text = "📱 手机存储中的文本与电子书文件（正在扫描...）"
-            textSize = 14f
-            setTypeface(typeface, Typeface.BOLD)
-            setTextColor(Color.parseColor("#0F172A"))
-            setPadding(0, dp(10), 0, dp(8))
-        }
-        bookshelfListContainer.addView(scanHeader)
-
-        val scannedListWrapper = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-        bookshelfListContainer.addView(scannedListWrapper)
-
-        thread {
-            val foundBooks = mutableListOf<File>()
-            val rootDir = Environment.getExternalStorageDirectory()
-            val readableExts = setOf("txt", "md", "markdown", "log", "csv", "json", "xml", "html")
-            fun scan(dir: File, depth: Int) {
-                if (depth > 4 || !dir.exists() || !dir.canRead()) return
-                val list = dir.listFiles() ?: return
-                for (f in list) {
-                    if (f.name.startsWith(".")) continue
-                    if (f.isDirectory) {
-                        if (!f.name.equals("Android", ignoreCase = true)) {
-                            scan(f, depth + 1)
+                val resetBtn = TextView(this).apply {
+                    text = "🔄 重置进度为 0%"
+                    textSize = 11.5f
+                    setTypeface(typeface, Typeface.BOLD)
+                    setTextColor(Color.parseColor("#047857"))
+                    setPadding(dp(10), dp(5), dp(10), dp(5))
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(10).toFloat()
+                        setColor(Color.parseColor("#ECFDF5"))
+                    }
+                    setOnClickListener {
+                        ReaderProgressStore.resetBookProgressToZero(this@ReaderActivity, record.bookKey)
+                        if (currentBookKey == record.bookKey && fullText.isNotEmpty()) {
+                            bookmarks.clear()
+                            currentCharOffset = 0
+                            currentPageIndex = 0
+                            jumpToPageIndex(0, animate = false)
                         }
-                    } else if (f.extension.lowercase(Locale.ROOT) in readableExts && f.length() > 0L) {
-                        foundBooks.add(f)
+                        showToast("已将《${record.title}》阅读进度重置为 0%")
+                        showPhoneBookshelfOverlay()
                     }
                 }
-            }
-            scan(rootDir, 0)
-            val sortedBooks = foundBooks.sortedByDescending { it.lastModified() }
-
-            runOnUiThread {
-                scanHeader.text = "📱 手机存储中的文本与电子书 (${sortedBooks.size} 项)"
-                scannedListWrapper.removeAllViews()
-                if (sortedBooks.isEmpty()) {
-                    scannedListWrapper.addView(TextView(this).apply {
-                        text = "未在常用目录扫描到 .txt / .md 文件，请点击上方「从手机存储选择文件打开」浏览任意目录。"
-                        textSize = 13f
-                        setTextColor(Color.parseColor("#64748B"))
-                        setPadding(dp(4), dp(12), dp(4), dp(12))
-                    })
-                } else {
-                    for (file in sortedBooks.take(60)) {
-                        val key = ReaderProgressStore.computeBookKey(file.absolutePath, file.name)
-                        val cached = ReaderProgressStore.getBookProgress(this, key)
-                        val card = MaterialCardView(this).apply {
-                            radius = dp(10).toFloat()
-                            setCardBackgroundColor(Color.WHITE)
-                            layoutParams = LinearLayout.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.WRAP_CONTENT
-                            ).apply { bottomMargin = dp(8) }
-                            setOnClickListener {
-                                phoneBookshelfOverlay.visibility = View.GONE
-                                loadBookFromFile(file)
-                            }
-                        }
-                        val sizeStr = file.length().asFileSize().formatHumanReadable(this)
-                        val progressBadge = cached?.let {
-                            " · 🔖 上次读到 ${String.format(Locale.US, "%.1f%%", it.progressPercent)} (第${it.pageIndex + 1}页)"
-                        }.orEmpty()
-                        val tv = TextView(this).apply {
-                            text = "📄 ${file.name}\n${file.parentFile?.name ?: ""} · $sizeStr$progressBadge"
-                            textSize = 13f
-                            setTextColor(Color.parseColor("#1E293B"))
-                            setPadding(dp(14), dp(10), dp(14), dp(10))
-                        }
-                        card.addView(tv)
-                        scannedListWrapper.addView(card)
+                val deleteBtn = TextView(this).apply {
+                    text = "🗑️ 删除该条记录"
+                    textSize = 11.5f
+                    setTypeface(typeface, Typeface.BOLD)
+                    setTextColor(Color.parseColor("#B91C1C"))
+                    setPadding(dp(10), dp(5), dp(10), dp(5))
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    ).apply { marginStart = dp(8) }
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(10).toFloat()
+                        setColor(Color.parseColor("#FEF2F2"))
+                    }
+                    setOnClickListener {
+                        ReaderProgressStore.removeBookProgress(this@ReaderActivity, record.bookKey)
+                        showToast("已删除《${record.title}》的阅读记录")
+                        showPhoneBookshelfOverlay()
                     }
                 }
+                actionRow.addView(resetBtn)
+                actionRow.addView(deleteBtn)
+                itemBox.addView(actionRow)
+                historyCol.addView(itemBox)
             }
         }
+        historyCard.addView(historyCol)
+        bookshelfListContainer.addView(historyCard)
     }
 
     private fun loadBookFromFile(file: File) {
         currentFilePath = file.absolutePath
         currentTitle = file.name
-        val bytes = runCatching { file.readBytes() }.getOrDefault(ByteArray(0))
-        val text = decodeTextBytes(bytes)
+        val text = runCatching {
+            FileInputStream(file).use { fis ->
+                ReadextStreamEngine.readIntoString(fis, file.name)
+            }
+        }.getOrDefault("（读取失败或空文件）")
         setupBookContent(
             filePath = file.absolutePath,
             title = file.name,
@@ -913,22 +1581,14 @@ class ReaderActivity : AppActivity() {
                 displayName = cursor.getString(idx) ?: displayName
             }
         }
-        val bytes = contentResolver.openInputStream(uri)?.use(InputStream::readBytes) ?: ByteArray(0)
-        val text = decodeTextBytes(bytes)
+        val text = contentResolver.openInputStream(uri)?.use { stream ->
+            ReadextStreamEngine.readIntoString(stream, displayName)
+        } ?: "（无法打开文档流）"
         setupBookContent(
             filePath = uri.toString(),
             title = displayName,
             content = text
         )
-    }
-
-    private fun decodeTextBytes(bytes: ByteArray): String {
-        if (bytes.isEmpty()) return "（空文件）"
-        val utf8 = String(bytes, Charsets.UTF_8)
-        if (utf8.count { it == '\uFFFD' } > 3) {
-            return runCatching { String(bytes, Charset.forName("GBK")) }.getOrDefault(utf8)
-        }
-        return utf8
     }
 
     private fun setupBookContent(filePath: String, title: String, content: String) {
@@ -940,13 +1600,13 @@ class ReaderActivity : AppActivity() {
         chapters = extractChapters(fullText)
         repaginateBook()
 
-        topMiniHeaderText.text = title
+        topMiniHeaderText.text = "📗 Readext · $title"
         overlayTitleText.text = title
-        // Ensure overlay menu starts hidden for pure immersive reading!
         setOverlayMenuVisibility(false)
 
-        // Restore reading progress from memory cache!
-        val savedProgress = ReaderProgressStore.getBookProgress(this, currentBookKey)
+        val savedProgress = if (preferences.autoRestoreProgress) {
+            ReaderProgressStore.getBookProgress(this, currentBookKey)
+        } else null
         if (savedProgress != null) {
             bookmarks = savedProgress.bookmarks.toMutableList()
             val restoredOffset = savedProgress.charOffset.coerceIn(0, (fullText.length - 1).coerceAtLeast(0))
@@ -958,7 +1618,7 @@ class ReaderActivity : AppActivity() {
             if (restoredOffset > 0 || restoredPage > 0) {
                 val pctStr = String.format(Locale.US, "%.1f%%", savedProgress.progressPercent)
                 showFloatingHud(
-                    "🔖 已自动恢复上次阅读进度\n第 ${restoredPage + 1}/${pages.size} 页 ($pctStr · ${savedProgress.chapterTitle})",
+                    "📗 Readext 已自动恢复上次阅读进度\n第 ${restoredPage + 1}/${pages.size} 页 ($pctStr · ${savedProgress.chapterTitle})",
                     2200L
                 )
             }
@@ -1060,7 +1720,7 @@ class ReaderActivity : AppActivity() {
         val targetChap = chapters[nextChapIdx]
         val pageIdx = findPageIndexForOffset(targetChap.charOffset)
         jumpToPageIndex(pageIdx, animate = true)
-        showFloatingHud("📖 ${targetChap.title}")
+        showFloatingHud("📗 ${targetChap.title}")
     }
 
     private fun jumpToPageIndex(index: Int, animate: Boolean) {
@@ -1078,11 +1738,12 @@ class ReaderActivity : AppActivity() {
                 verticalScrollView.smoothScrollTo(0, (ratio * totalHeight).toInt())
             }
         } else {
+            val formattedText = formatReadextSpannable(slice.text)
             if (animate && preferences.pageTurnMode == PageTurnMode.SWIPE_PAGER && oldIndex != clamped) {
                 val direction = if (clamped > oldIndex) 1 else -1
                 pagedTextView.translationX = (direction * dp(28)).toFloat()
                 pagedTextView.alpha = 0.4f
-                pagedTextView.text = slice.text
+                pagedTextView.text = formattedText
                 pagedTextView.animate()
                     .translationX(0f)
                     .alpha(1f)
@@ -1091,7 +1752,7 @@ class ReaderActivity : AppActivity() {
             } else {
                 pagedTextView.translationX = 0f
                 pagedTextView.alpha = 1f
-                pagedTextView.text = slice.text
+                pagedTextView.text = formattedText
             }
         }
 
@@ -1137,7 +1798,7 @@ class ReaderActivity : AppActivity() {
 
         miniChapterText.text = chapterName
         miniProgressText.text = String.format(Locale.US, "%d/%d · %.1f%%", idx + 1, total, pct)
-        overlaySubtitleText.text = "$chapterName · 进度 ${String.format(Locale.US, "%.1f%%", pct)} (已实时缓存)"
+        overlaySubtitleText.text = "Readext Engine · $chapterName · ${String.format(Locale.US, "%.1f%%", pct)}"
         seekProgressLabel.text = "$chapterName · 第 ${idx + 1} / $total 页 (${String.format(Locale.US, "%.1f%%", pct)})"
 
         if (!fromScroll) {
@@ -1180,12 +1841,9 @@ class ReaderActivity : AppActivity() {
             )
         )
         persistReadingProgress()
-        showFloatingHud("🔖 已添加书签：[$chapter] 第 ${currentPageIndex + 1} 页")
+        showFloatingHud("🔖 已添加 Readext 书签：[$chapter] 第 ${currentPageIndex + 1} 页")
     }
 
-    /**
-     * Moon+ Reader Visual Options Sheet (Font Size, Line Spacing, Theme Cards)
-     */
     private fun showVisualTypographySheet() {
         val scroll = ScrollView(this)
         val content = LinearLayout(this).apply {
@@ -1219,7 +1877,7 @@ class ReaderActivity : AppActivity() {
         }
         val sizeBar = SeekBar(this).apply {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            max = 24 // 12sp .. 36sp
+            max = 24
             progress = (preferences.fontSizeSp.toInt() - 12).coerceIn(0, 24)
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
@@ -1300,7 +1958,7 @@ class ReaderActivity : AppActivity() {
                 background = GradientDrawable().apply {
                     cornerRadius = dp(10).toFloat()
                     setColor(Color.parseColor(t.backgroundColorHex))
-                    setStroke(dp(1), Color.parseColor("#94A3B8"))
+                    setStroke(dp(1), Color.parseColor("#10B981"))
                 }
                 setOnClickListener {
                     preferences = preferences.copy(theme = t)
@@ -1313,7 +1971,7 @@ class ReaderActivity : AppActivity() {
         content.addView(themeRow)
 
         MaterialAlertDialogBuilder(this)
-            .setTitle("静读天下 · 视觉与排版设置")
+            .setTitle("📗 Readext · 视觉与排版设置")
             .setView(scroll)
             .setPositiveButton("完成", null)
             .show()
@@ -1327,11 +1985,11 @@ class ReaderActivity : AppActivity() {
         }.toTypedArray()
 
         MaterialAlertDialogBuilder(this)
-            .setTitle("选择翻页方式")
+            .setTitle("选择 Readext 翻页方式")
             .setItems(labels) { _, which ->
                 val chosen = modes[which]
                 updatePageTurnMode(chosen)
-                showFloatingHud("📖 翻页方式：${chosen.displayName}")
+                showFloatingHud("📗 翻页方式：${chosen.displayName}")
             }
             .show()
     }
@@ -1396,10 +2054,55 @@ class ReaderActivity : AppActivity() {
             }
         }
 
+        // Progress Reset & Clear section inside the book's TOC dialog
+        val progressActionRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(12), 0, dp(4))
+        }
+        val resetCurrentBtn = MaterialButton(
+            this,
+            null,
+            com.google.android.material.R.attr.materialButtonOutlinedStyle
+        ).apply {
+            text = "🔄 重置本书进度 (0%)"
+            textSize = 12f
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginEnd = dp(6)
+            }
+            setOnClickListener {
+                ReaderProgressStore.resetBookProgressToZero(this@ReaderActivity, currentBookKey)
+                bookmarks.clear()
+                currentCharOffset = 0
+                currentPageIndex = 0
+                jumpToPageIndex(0, animate = true)
+                dialogRef?.dismiss()
+                showFloatingHud("🔄 已将本书阅读进度重置为开头 (0%)")
+            }
+        }
+        val clearCurrentBtn = MaterialButton(
+            this,
+            null,
+            com.google.android.material.R.attr.materialButtonOutlinedStyle
+        ).apply {
+            text = "🗑️ 清除全部记录"
+            textSize = 12f
+            setTextColor(Color.parseColor("#B91C1C"))
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            setOnClickListener {
+                ReaderProgressStore.clearAllBookProgress(this@ReaderActivity)
+                bookmarks.clear()
+                dialogRef?.dismiss()
+                showFloatingHud("🧹 已清除所有书籍阅读记录与进度缓存")
+            }
+        }
+        progressActionRow.addView(resetCurrentBtn)
+        progressActionRow.addView(clearCurrentBtn)
+        container.addView(progressActionRow)
+
         dialogRef = MaterialAlertDialogBuilder(this)
-            .setTitle("目录与书签")
+            .setTitle("📗 Readext · 目录、书签与进度管理")
             .setView(scroll)
-            .setNeutralButton("阅读记忆书架") { _, _ ->
+            .setNeutralButton("Readext 全局设置") { _, _ ->
                 showPhoneBookshelfOverlay()
             }
             .setNegativeButton(R.string.close, null)

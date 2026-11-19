@@ -645,7 +645,7 @@
     <string name="about_author_twitter_title">在 Twitter 上关注</string>
 
     <string name="navigation_disk_analysis">磁盘空间分析</string>
-    <string name="navigation_media_player">内置音视频播放器</string>
+    <string name="navigation_media_player">VLC 音视频播放器设置</string>
     <string name="navigation_cloud_drive">云盘管理 (Google Drive / OneDrive)</string>
     <string name="file_list_action_disk_analysis">磁盘空间分析</string>
     <string name="disk_analysis_title">磁盘空间分析</string>
@@ -660,14 +660,18 @@
     <string name="disk_analysis_category_document">文档</string>
     <string name="disk_analysis_category_apk">安装包</string>
     <string name="disk_analysis_category_other">压缩包与其他</string>
-    <string name="media_player_title">音视频播放器</string>
+    <string name="media_player_title">VLC 音视频播放器</string>
     <string name="storage_add_storage_google_drive">Google Drive 云盘</string>
     <string name="storage_add_storage_onedrive">Microsoft OneDrive 云盘</string>
     <string name="cloud_drive_title">云盘文件浏览器</string>
     <string name="navigation_document_preview">Office 与 Markdown 实时预览</string>
-    <string name="navigation_built_in_reader">内置阅读器 (记忆缓存)</string>
+    <string name="navigation_built_in_reader">Readext 阅读器设置 (进度管理)</string>
     <string name="navigation_archive_preview">压缩包预览与分卷/加密</string>
     <string name="document_preview_title">文档预览与实时渲染</string>
-    <string name="built_in_reader_title">内置阅读器</string>
+    <string name="built_in_reader_title">Readext 阅读器</string>
     <string name="archive_preview_title">压缩包免解压预览</string>
+    <string name="file_list_action_grid_columns_2">网格排布：大图标 (每行 2 列)</string>
+    <string name="file_list_action_grid_columns_3">网格排布：标准 (每行 3 列)</string>
+    <string name="file_list_action_grid_columns_4">网格排布：紧凑 (每行 4 列)</string>
+    <string name="file_list_action_grid_columns_5">网格排布：超密 (每行 5 列)</string>
 </resources>

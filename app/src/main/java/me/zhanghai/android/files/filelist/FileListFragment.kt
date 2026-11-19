@@ -476,10 +476,44 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
             }
             R.id.action_view_list -> {
                 viewModel.viewType = FileViewType.LIST
+                renderMultiTabStrip()
                 true
             }
             R.id.action_view_grid -> {
                 viewModel.viewType = FileViewType.GRID
+                renderMultiTabStrip()
+                true
+            }
+            R.id.action_grid_columns_2 -> {
+                setPreferredGridColumns(2)
+                viewModel.viewType = FileViewType.GRID
+                updateSpanCount()
+                updateViewSortMenuItems()
+                renderMultiTabStrip()
+                true
+            }
+            R.id.action_grid_columns_3 -> {
+                setPreferredGridColumns(3)
+                viewModel.viewType = FileViewType.GRID
+                updateSpanCount()
+                updateViewSortMenuItems()
+                renderMultiTabStrip()
+                true
+            }
+            R.id.action_grid_columns_4 -> {
+                setPreferredGridColumns(4)
+                viewModel.viewType = FileViewType.GRID
+                updateSpanCount()
+                updateViewSortMenuItems()
+                renderMultiTabStrip()
+                true
+            }
+            R.id.action_grid_columns_5 -> {
+                setPreferredGridColumns(5)
+                viewModel.viewType = FileViewType.GRID
+                updateSpanCount()
+                updateViewSortMenuItems()
+                renderMultiTabStrip()
                 true
             }
             R.id.action_sort_by_name -> {
@@ -769,6 +803,76 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
             }
         }
         strip.addView(addTabBtn)
+
+        // 4. [ ⊞ 排布 ] Quick View & Grid Column Arrangement Switcher Pill
+        if (!isHomeDashboardActive) {
+            val isGrid = currentViewTypeSafe == FileViewType.GRID
+            val cols = getPreferredGridColumns()
+            val layoutChip = TextView(ctx).apply {
+                text = if (isGrid) "⊞ 网格 ${cols}列 ▾" else "☰ 列表视图 ▾"
+                textSize = 11f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                setTextColor(android.graphics.Color.parseColor("#0F766E"))
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = dp(14).toFloat()
+                    setColor(android.graphics.Color.parseColor("#F0FDFA"))
+                    setStroke(dp(1), android.graphics.Color.parseColor("#99F6E4"))
+                }
+                setPadding(dp(10), dp(4), dp(10), dp(4))
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { leftMargin = dp(6) }
+                setOnClickListener {
+                    showGridArrangementDialog()
+                }
+            }
+            strip.addView(layoutChip)
+        }
+    }
+
+    private val currentViewTypeSafe: FileViewType
+        get() = viewModel.viewTypeLiveData.value ?: FileViewType.LIST
+
+    private fun getPreferredGridColumns(): Int {
+        val prefs = requireContext().getSharedPreferences("file_list_grid_prefs", android.content.Context.MODE_PRIVATE)
+        return prefs.getInt("grid_columns", 3).coerceIn(2, 5)
+    }
+
+    private fun setPreferredGridColumns(columns: Int) {
+        val clamped = columns.coerceIn(2, 5)
+        requireContext().getSharedPreferences("file_list_grid_prefs", android.content.Context.MODE_PRIVATE)
+            .edit()
+            .putInt("grid_columns", clamped)
+            .apply()
+    }
+
+    private fun showGridArrangementDialog() {
+        val isGrid = currentViewTypeSafe == FileViewType.GRID
+        val curCols = getPreferredGridColumns()
+        val options = arrayOf(
+            if (!isGrid) "✓ ☰ 列表视图 (单列详情)" else "☰ 列表视图 (单列详情)",
+            if (isGrid && curCols == 2) "✓ ⊞ 网格排布：大图标 (每行 2 列)" else "⊞ 网格排布：大图标 (每行 2 列)",
+            if (isGrid && curCols == 3) "✓ ⊞ 网格排布：标准 (每行 3 列 · 推荐)" else "⊞ 网格排布：标准 (每行 3 列 · 推荐)",
+            if (isGrid && curCols == 4) "✓ ⊞ 网格排布：紧凑 (每行 4 列)" else "⊞ 网格排布：紧凑 (每行 4 列)",
+            if (isGrid && curCols == 5) "✓ ⊞ 网格排布：超密 (每行 5 列)" else "⊞ 网格排布：超密 (每行 5 列)"
+        )
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+            .setTitle("视图与网格排布设置")
+            .setItems(options) { _, which ->
+                if (which == 0) {
+                    viewModel.viewType = FileViewType.LIST
+                } else {
+                    val cols = which + 1
+                    setPreferredGridColumns(cols)
+                    viewModel.viewType = FileViewType.GRID
+                }
+                updateSpanCount()
+                updateViewSortMenuItems()
+                renderMultiTabStrip()
+            }
+            .setNegativeButton(R.string.close, null)
+            .show()
     }
 
     private fun onSearchViewExpandedChanged(expanded: Boolean) {
@@ -837,13 +941,21 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
     }
 
     private fun onViewTypeChanged(viewType: FileViewType) {
-        updateSpanCount()
         adapter.viewType = viewType
+        updateSpanCount()
         updateViewSortMenuItems()
+        renderMultiTabStrip()
     }
 
     private fun updateSpanCount() {
-        layoutManager.spanCount = when (viewModel.viewType) {
+        val preferredCols = getPreferredGridColumns()
+        if (this::adapter.isInitialized) {
+            adapter.gridColumnsCount = preferredCols
+        }
+        if (!this::layoutManager.isInitialized) {
+            return
+        }
+        layoutManager.spanCount = when (currentViewTypeSafe) {
             FileViewType.LIST -> 1
             FileViewType.GRID -> {
                 var widthDp = resources.configuration.screenWidthDp
@@ -852,7 +964,12 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
                     persistentDrawerLayout.isDrawerOpen(GravityCompat.START)) {
                     widthDp -= getDimensionDp(R.dimen.navigation_max_width).roundToInt()
                 }
-                (widthDp / 180).coerceAtLeast(2)
+                // Scale columns proportionally on landscape or wide screens while respecting user's 2/3/4/5 choice on portrait
+                if (widthDp >= 600) {
+                    (preferredCols * widthDp / 360).coerceAtLeast(preferredCols + 1)
+                } else {
+                    preferredCols
+                }
             }
         }
     }
@@ -881,6 +998,14 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
             FileViewType.GRID -> menuBinding.viewGridItem
         }
         checkedViewTypeItem.isChecked = true
+        val curCols = getPreferredGridColumns()
+        val checkedGridColsItem = when (curCols) {
+            2 -> menuBinding.gridColumns2Item
+            3 -> menuBinding.gridColumns3Item
+            4 -> menuBinding.gridColumns4Item
+            else -> menuBinding.gridColumns5Item
+        }
+        checkedGridColsItem.isChecked = true
         val sortOptions = viewModel.sortOptions
         val checkedSortByItem = when (sortOptions.by) {
             By.NAME -> menuBinding.sortByNameItem
@@ -1423,7 +1548,8 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
         }
         val lowerName = file.name.lowercase()
         if (!file.attributes.isDirectory && !file.path.isArchivePath) {
-            if (lowerName.endsWith(".docx") ||
+            if (lowerName.endsWith(".pdf") ||
+                lowerName.endsWith(".docx") ||
                 lowerName.endsWith(".xlsx") ||
                 lowerName.endsWith(".csv") ||
                 lowerName.endsWith(".md") ||
@@ -1437,7 +1563,7 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
                 )
                 return
             }
-            if (lowerName.endsWith(".txt") || lowerName.endsWith(".log")) {
+            if (lowerName.endsWith(".txt") || lowerName.endsWith(".log") || lowerName.endsWith(".epub")) {
                 startActivitySafe(
                     me.zhanghai.android.files.viewer.reader.ReaderActivity.createIntent(
                         context = requireContext(),
@@ -1967,6 +2093,10 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
         val viewSortItem: MenuItem,
         val viewListItem: MenuItem,
         val viewGridItem: MenuItem,
+        val gridColumns2Item: MenuItem,
+        val gridColumns3Item: MenuItem,
+        val gridColumns4Item: MenuItem,
+        val gridColumns5Item: MenuItem,
         val sortByNameItem: MenuItem,
         val sortByTypeItem: MenuItem,
         val sortBySizeItem: MenuItem,
@@ -1983,6 +2113,10 @@ class FileListFragment : Fragment(), BreadcrumbLayout.Listener, FileListAdapter.
                 return MenuBinding(
                     menu, menu.findItem(R.id.action_search), menu.findItem(R.id.action_view_sort),
                     menu.findItem(R.id.action_view_list), menu.findItem(R.id.action_view_grid),
+                    menu.findItem(R.id.action_grid_columns_2),
+                    menu.findItem(R.id.action_grid_columns_3),
+                    menu.findItem(R.id.action_grid_columns_4),
+                    menu.findItem(R.id.action_grid_columns_5),
                     menu.findItem(R.id.action_sort_by_name),
                     menu.findItem(R.id.action_sort_by_type),
                     menu.findItem(R.id.action_sort_by_size),

@@ -359,7 +359,7 @@
 
         <activity
             android:name="me.zhanghai.android.files.viewer.media.MediaPlayerActivity"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:exported="true"
             android:label="@string/media_player_title"
             android:theme="@style/Theme.MaterialFiles">
@@ -379,6 +379,7 @@
 
         <activity
             android:name="me.zhanghai.android.files.cloud.CloudDriveActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:exported="true"
             android:label="@string/cloud_drive_title"
             android:launchMode="singleTop"
@@ -401,6 +402,7 @@
 
         <activity
             android:name="me.zhanghai.android.files.viewer.reader.ReaderActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:exported="false"
             android:label="@string/built_in_reader_title"
             android:theme="@style/Theme.MaterialFiles" />

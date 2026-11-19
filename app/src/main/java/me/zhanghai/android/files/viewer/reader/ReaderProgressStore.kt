@@ -59,7 +59,11 @@ data class ReaderPreferences(
     val fontSizeSp: Float = 18f,
     val lineSpacingMultiplier: Float = 1.5f,
     val pageTurnMode: PageTurnMode = PageTurnMode.SWIPE_PAGER,
-    val theme: ReaderTheme = ReaderTheme.SEPIA
+    val theme: ReaderTheme = ReaderTheme.SEPIA,
+    val autoRestoreProgress: Boolean = true,
+    val volumeKeyPageTurn: Boolean = true,
+    val keepScreenOn: Boolean = true,
+    val showBottomMiniStatusBar: Boolean = true
 )
 
 object ReaderProgressStore {
@@ -79,10 +83,14 @@ object ReaderProgressStore {
         return runCatching {
             val obj = JSONObject(raw)
             ReaderPreferences(
-                fontSizeSp = obj.optDouble("fontSizeSp", 18.0).toFloat().coerceIn(12f, 32f),
-                lineSpacingMultiplier = obj.optDouble("lineSpacingMultiplier", 1.5).toFloat().coerceIn(1.1f, 2.2f),
+                fontSizeSp = obj.optDouble("fontSizeSp", 18.0).toFloat().coerceIn(12f, 36f),
+                lineSpacingMultiplier = obj.optDouble("lineSpacingMultiplier", 1.5).toFloat().coerceIn(1.0f, 2.2f),
                 pageTurnMode = PageTurnMode.fromId(obj.optString("pageTurnMode")),
-                theme = ReaderTheme.fromId(obj.optString("theme"))
+                theme = ReaderTheme.fromId(obj.optString("theme")),
+                autoRestoreProgress = obj.optBoolean("autoRestoreProgress", true),
+                volumeKeyPageTurn = obj.optBoolean("volumeKeyPageTurn", true),
+                keepScreenOn = obj.optBoolean("keepScreenOn", true),
+                showBottomMiniStatusBar = obj.optBoolean("showBottomMiniStatusBar", true)
             )
         }.getOrDefault(ReaderPreferences())
     }
@@ -94,6 +102,10 @@ object ReaderProgressStore {
             put("lineSpacingMultiplier", preferences.lineSpacingMultiplier.toDouble())
             put("pageTurnMode", preferences.pageTurnMode.id)
             put("theme", preferences.theme.id)
+            put("autoRestoreProgress", preferences.autoRestoreProgress)
+            put("volumeKeyPageTurn", preferences.volumeKeyPageTurn)
+            put("keepScreenOn", preferences.keepScreenOn)
+            put("showBottomMiniStatusBar", preferences.showBottomMiniStatusBar)
         }
         prefs.edit().putString(KEY_PREFS_CONFIG, obj.toString()).apply()
     }
@@ -106,10 +118,42 @@ object ReaderProgressStore {
         val all = getAllBookProgress(context).toMutableList()
         all.removeAll { it.bookKey == progress.bookKey }
         all.add(0, progress)
-        val trimmed = all.take(50)
+        writeBookProgressList(context, all.take(50))
+    }
 
+    fun removeBookProgress(context: Context, bookKey: String) {
+        val all = getAllBookProgress(context).toMutableList()
+        all.removeAll { it.bookKey == bookKey }
+        writeBookProgressList(context, all)
+    }
+
+    fun resetBookProgressToZero(context: Context, bookKey: String): BookReadingProgress? {
+        val all = getAllBookProgress(context).toMutableList()
+        val index = all.indexOfFirst { it.bookKey == bookKey }
+        if (index < 0) return null
+        val updated = all[index].copy(
+            charOffset = 0,
+            pageIndex = 0,
+            progressPercent = 0f,
+            chapterTitle = "正文",
+            updatedAtMillis = System.currentTimeMillis(),
+            bookmarks = emptyList()
+        )
+        all[index] = updated
+        writeBookProgressList(context, all)
+        return updated
+    }
+
+    fun clearAllBookProgress(context: Context) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .remove(KEY_BOOK_MAP)
+            .apply()
+    }
+
+    private fun writeBookProgressList(context: Context, list: List<BookReadingProgress>) {
         val arr = JSONArray()
-        for (item in trimmed) {
+        for (item in list) {
             val bmArr = JSONArray()
             item.bookmarks.forEach { bm ->
                 bmArr.put(

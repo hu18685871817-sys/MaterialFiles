@@ -103,10 +103,9 @@ class ArchivePreviewActivity : AppActivity() {
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        menu.add(0, MENU_CREATE_CUSTOM_ARCHIVE, 0, "新建分卷/加密压缩").setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
         menu.add(0, MENU_EXTRACT_ALL, 1, "全部解压").setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
         menu.add(0, MENU_SET_PASSWORD, 2, "输入解压密码").setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER)
-        menu.add(0, MENU_OPEN_ARCHIVE, 3, "打开其他压缩包").setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER)
+        menu.add(0, MENU_OPEN_ARCHIVE, 3, "打开其他压缩包").setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
         return true
     }
 
@@ -114,10 +113,6 @@ class ArchivePreviewActivity : AppActivity() {
         return when (item.itemId) {
             android.R.id.home -> {
                 finish()
-                true
-            }
-            MENU_CREATE_CUSTOM_ARCHIVE -> {
-                showCreateAdvancedArchiveDialog()
                 true
             }
             MENU_EXTRACT_ALL -> {
@@ -209,7 +204,7 @@ class ArchivePreviewActivity : AppActivity() {
             orientation = LinearLayout.HORIZONTAL
         }
         val extractAllBtn = MaterialButton(this).apply {
-            text = "📂 解压全部文件 (需密码时自动验证)"
+            text = "📂 解压全部文件"
             textSize = 11.5f
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -217,17 +212,17 @@ class ArchivePreviewActivity : AppActivity() {
             ).apply { marginEnd = dp(8) }
             setOnClickListener { triggerExtractAllWithPasswordCheck() }
         }
-        val createSplitOrEncBtn = MaterialButton(
+        val openOtherArchiveBtn = MaterialButton(
             this,
             null,
             com.google.android.material.R.attr.materialButtonOutlinedStyle
         ).apply {
-            text = "➕ 创建分卷 / 加密压缩包"
+            text = "📁 选择手机中的压缩包"
             textSize = 11.5f
-            setOnClickListener { showCreateAdvancedArchiveDialog() }
+            setOnClickListener { pickArchiveLauncher.launch(arrayOf("*/*")) }
         }
         actionRow.addView(extractAllBtn)
-        actionRow.addView(createSplitOrEncBtn)
+        actionRow.addView(openOtherArchiveBtn)
         actionScroll.addView(actionRow)
         summaryCol.addView(actionScroll)
 
@@ -283,6 +278,12 @@ class ArchivePreviewActivity : AppActivity() {
     }
 
     private fun resolveInitialArchive(intent: Intent) {
+        // Clean up any legacy demo archive file if present
+        runCatching {
+            val legacyDemo = File(getArchiveWorkshopDir(), "项目资料汇总_支持免解压预览.zip")
+            if (legacyDemo.exists()) legacyDemo.delete()
+        }
+
         val pathExtra = intent.extraPath
         val localFile = runCatching { pathExtra?.toFile() }.getOrNull()
             ?: intent.getStringExtra(EXTRA_FILE_PATH)?.let { File(it) }
@@ -298,9 +299,85 @@ class ArchivePreviewActivity : AppActivity() {
             return
         }
 
-        // Launched directly: generate a sample archive to demonstrate in-archive preview
-        val demoArchive = ensureDemoArchiveFile()
-        loadArchiveFromFile(demoArchive)
+        showLocalArchivePickerState()
+    }
+
+    private fun showLocalArchivePickerState() {
+        toolbar.title = "压缩包免解压预览"
+        toolbar.subtitle = "支持 ZIP / RAR / 7Z / TAR 及分卷压缩包"
+        summaryText.text = "请选择手机中的压缩文件进行免解压预览，或在文件列表中长按任意文件选择「压缩」创建分卷/加密压缩包。"
+        badgesRow.removeAllViews()
+        entryListContainer.removeAllViews()
+
+        val root = Environment.getExternalStorageDirectory()
+        val foundArchives = mutableListOf<File>()
+        fun scanDir(dir: File, depth: Int) {
+            if (depth > 3 || foundArchives.size >= 30) return
+            val children = dir.listFiles() ?: return
+            for (child in children) {
+                if (child.name.startsWith(".")) continue
+                if (child.isDirectory) {
+                    val lower = child.name.lowercase(Locale.ROOT)
+                    if (lower == "android" || lower == "data" || lower == "obb") continue
+                    scanDir(child, depth + 1)
+                } else if (child.isFile && isSplitOrSupportedArchiveName(child.name)) {
+                    foundArchives.add(child)
+                }
+            }
+        }
+        runCatching { scanDir(root, 0) }
+
+        if (foundArchives.isEmpty()) {
+            entryListContainer.addView(TextView(this).apply {
+                text = "当前未在常用目录发现压缩包文件，请点击上方「📁 选择手机中的压缩包」打开。"
+                textSize = 13.5f
+                setTextColor(Color.parseColor("#64748B"))
+                gravity = Gravity.CENTER
+                setPadding(dp(20), dp(40), dp(20), dp(40))
+            })
+        } else {
+            val df = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+            foundArchives.sortedByDescending { it.lastModified() }.forEach { archiveFile ->
+                val card = MaterialCardView(this).apply {
+                    radius = dp(10).toFloat()
+                    cardElevation = dp(1).toFloat()
+                    setCardBackgroundColor(Color.WHITE)
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    ).apply { bottomMargin = dp(8) }
+                    setOnClickListener { loadArchiveFromFile(archiveFile) }
+                }
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(14), dp(12), dp(14), dp(12))
+                }
+                row.addView(TextView(this).apply {
+                    text = "🗜️"
+                    textSize = 20f
+                    setPadding(0, 0, dp(12), 0)
+                })
+                val col = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                }
+                col.addView(TextView(this).apply {
+                    text = archiveFile.name
+                    textSize = 14f
+                    setTypeface(typeface, Typeface.BOLD)
+                    setTextColor(Color.parseColor("#0F172A"))
+                })
+                col.addView(TextView(this).apply {
+                    text = "${archiveFile.length().asFileSize().formatHumanReadable(this@ArchivePreviewActivity)} · ${df.format(Date(archiveFile.lastModified()))}"
+                    textSize = 12f
+                    setTextColor(Color.parseColor("#64748B"))
+                })
+                row.addView(col)
+                card.addView(row)
+                entryListContainer.addView(card)
+            }
+        }
     }
 
     private fun getArchiveWorkshopDir(): File {
@@ -313,22 +390,6 @@ class ArchivePreviewActivity : AppActivity() {
         }
         if (!dir.exists()) dir.mkdirs()
         return dir
-    }
-
-    private fun ensureDemoArchiveFile(): File {
-        val dir = getArchiveWorkshopDir()
-        val demoZip = File(dir, "项目资料汇总_支持免解压预览.zip")
-        if (!demoZip.exists()) {
-            runCatching {
-                createCustomArchiveFile(
-                    targetFile = demoZip,
-                    password = null,
-                    compressionLevel = 6,
-                    splitVolumeBytes = 0L
-                )
-            }
-        }
-        return demoZip
     }
 
     private fun loadArchiveFromFile(file: File) {
@@ -729,209 +790,7 @@ class ArchivePreviewActivity : AppActivity() {
             .show()
     }
 
-    /**
-     * Dialog to create a new archive with:
-     * - Compression Level: Fast (1) / Normal (6) / Maximum (9)
-     * - Split Volume: Single / Split Part1 & Part2 / Split by 1MB
-     * - Password Encryption (AES-256)
-     */
-    private fun showCreateAdvancedArchiveDialog() {
-        val scroll = ScrollView(this)
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(12), dp(20), dp(12))
-        }
-        scroll.addView(layout)
-
-        val nameInput = EditText(this).apply {
-            setText("加密分卷归档_${System.currentTimeMillis() % 1000}.zip")
-            hint = "输入压缩包名称 (.zip)"
-        }
-        layout.addView(TextView(this).apply {
-            text = "压缩包文件名:"
-            setTypeface(typeface, Typeface.BOLD)
-        })
-        layout.addView(nameInput)
-
-        // Compression Level RadioGroup
-        layout.addView(TextView(this).apply {
-            text = "\n选择压缩等级（权衡速度与体积）:"
-            setTypeface(typeface, Typeface.BOLD)
-        })
-        val levelGroup = RadioGroup(this).apply {
-            orientation = RadioGroup.VERTICAL
-        }
-        val fastRadio = RadioButton(this).apply {
-            id = View.generateViewId()
-            text = "⚡ 快速压缩 (Level 1 - 速度最快)"
-        }
-        val normalRadio = RadioButton(this).apply {
-            id = View.generateViewId()
-            text = "⚖️ 标准压缩 (Level 6 - 平衡速度与体积)"
-            isChecked = true
-        }
-        val maxRadio = RadioButton(this).apply {
-            id = View.generateViewId()
-            text = "🗜️ 最大压缩 (Level 9 - 最小文件体积)"
-        }
-        levelGroup.addView(fastRadio)
-        levelGroup.addView(normalRadio)
-        levelGroup.addView(maxRadio)
-        layout.addView(levelGroup)
-
-        // Split Volume RadioGroup
-        layout.addView(TextView(this).apply {
-            text = "\n分卷压缩设置（支持生成 Part1、Part2 分卷）:"
-            setTypeface(typeface, Typeface.BOLD)
-        })
-        val splitGroup = RadioGroup(this).apply {
-            orientation = RadioGroup.VERTICAL
-        }
-        val splitNone = RadioButton(this).apply {
-            id = View.generateViewId()
-            text = "不分卷（生成单个 .zip 文件）"
-        }
-        val splitTwoParts = RadioButton(this).apply {
-            id = View.generateViewId()
-            text = "创建分卷压缩包（自动拆分为 .part1.zip 与 .part2.zip）"
-            isChecked = true
-        }
-        splitGroup.addView(splitNone)
-        splitGroup.addView(splitTwoParts)
-        layout.addView(splitGroup)
-
-        // Password Input
-        layout.addView(TextView(this).apply {
-            text = "\n加密压缩密码（AES-256 加密，解压/预览需输入密码）:"
-            setTypeface(typeface, Typeface.BOLD)
-        })
-        val pwdInput = EditText(this).apply {
-            hint = "留空则不加密，输入如 123456 开启加密保护"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
-        }
-        layout.addView(pwdInput)
-
-        MaterialAlertDialogBuilder(this)
-            .setTitle("创建分卷 / 加密压缩文件")
-            .setView(scroll)
-            .setPositiveButton("立即创建并预览") { _, _ ->
-                var rawName = nameInput.text?.toString()?.trim().orEmpty().ifEmpty { "archive.zip" }
-                if (!rawName.endsWith(".zip", true)) rawName += ".zip"
-                val level = when (levelGroup.checkedRadioButtonId) {
-                    fastRadio.id -> 1
-                    maxRadio.id -> 9
-                    else -> 6
-                }
-                val splitBytes = if (splitGroup.checkedRadioButtonId == splitTwoParts.id) -1L else 0L
-                val pwd = pwdInput.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }
-
-                val outDir = currentArchiveFile?.parentFile?.takeIf { it.canWrite() } ?: getArchiveWorkshopDir()
-                val outFile = File(outDir, rawName)
-                runCatching {
-                    val firstVolume = createCustomArchiveFile(
-                        targetFile = outFile,
-                        password = pwd,
-                        compressionLevel = level,
-                        splitVolumeBytes = splitBytes
-                    )
-                    verifiedPassword = null // Reset so user can experience password prompt when clicking an encrypted entry
-                    loadArchiveFromFile(firstVolume)
-                    val msg = buildString {
-                        append("已成功创建压缩包: ${firstVolume.name}")
-                        if (splitBytes != 0L) append(" (含 Part1 / Part2 分卷)")
-                        if (pwd != null) append(" [已启用密码保护]")
-                    }
-                    showToast(msg)
-                }.onFailure { e ->
-                    showToast("创建压缩包失败: ${e.localizedMessage}")
-                }
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-    }
-
-    private fun createCustomArchiveFile(
-        targetFile: File,
-        password: String?,
-        compressionLevel: Int,
-        splitVolumeBytes: Long
-    ): File {
-        if (targetFile.exists()) targetFile.delete()
-        val sampleEntries = listOf(
-            "README_项目说明.md" to """
-                # 压缩包内 Markdown 免解压预览
-                - 压缩等级: Level $compressionLevel (${when (compressionLevel) { 1 -> "快速压缩"; 9 -> "最大压缩"; else -> "标准压缩" }})
-                - 加密状态: ${if (password != null) "AES-256 密码加密保护" else "未加密"}
-                - 分卷模式: ${if (splitVolumeBytes != 0L) "Part1 / Part2 多卷拆分" else "单文件归档"}
-                
-                您可以直接点击压缩包内的任意文件进行实时渲染预览！
-            """.trimIndent().toByteArray(Charsets.UTF_8),
-            "配置清单/server_config.json" to """
-                {
-                  "service": "MaterialFiles Archive Engine",
-                  "compressionLevel": $compressionLevel,
-                  "encrypted": ${password != null},
-                  "splitVolumes": ${splitVolumeBytes != 0L}
-                }
-            """.trimIndent().toByteArray(Charsets.UTF_8),
-            "技术规范/架构设计笔记.txt" to """
-                第一章 压缩与分卷归档说明
-                
-                本文件存储在 ZIP 归档包内部。通过内置免解压预览器，无需将整个压缩包解压到磁盘，即可直接查看 TXT、Markdown、DOCX 与 XLSX 内容。
-            """.trimIndent().toByteArray(Charsets.UTF_8)
-        )
-
-        FileChannel.open(
-            java8.nio.file.Paths.get(targetFile.absolutePath),
-            StandardOpenOption.CREATE,
-            StandardOpenOption.WRITE,
-            StandardOpenOption.TRUNCATE_EXISTING
-        ).use { channel ->
-            WriteArchive(
-                channel = channel,
-                format = Archive.FORMAT_ZIP,
-                filter = Archive.FILTER_NONE,
-                password = password,
-                compressionLevel = compressionLevel
-            ).use { writer ->
-                for ((entryPath, data) in sampleEntries) {
-                    writer.Entry(
-                        name = entryPath,
-                        lastModifiedTime = null,
-                        lastAccessTime = null,
-                        creationTime = null,
-                        type = PosixFileType.REGULAR_FILE,
-                        size = data.size.toLong(),
-                        owner = null,
-                        group = null,
-                        mode = PosixFileMode.FILE_DEFAULT,
-                        symbolicLinkTarget = null
-                    ).use { entry ->
-                        writer.writeEntry(entry)
-                    }
-                    writer.newDataOutputStream().write(data)
-                }
-            }
-        }
-
-        if (splitVolumeBytes != 0L && targetFile.length() >= 4L) {
-            val totalLen = targetFile.length()
-            val half = (totalLen + 1L) / 2L
-            val baseName = targetFile.nameWithoutExtension
-            val ext = targetFile.extension.ifEmpty { "zip" }
-            val part1 = File(targetFile.parentFile, "${baseName}.part1.$ext")
-            val part2 = File(targetFile.parentFile, "${baseName}.part2.$ext")
-            val allBytes = targetFile.readBytes()
-            part1.writeBytes(allBytes.copyOfRange(0, half.toInt()))
-            part2.writeBytes(allBytes.copyOfRange(half.toInt(), allBytes.size))
-            targetFile.delete()
-            return part1
-        }
-        return targetFile
-    }
-
     companion object {
-        private const val MENU_CREATE_CUSTOM_ARCHIVE = 301
         private const val MENU_EXTRACT_ALL = 302
         private const val MENU_SET_PASSWORD = 303
         private const val MENU_OPEN_ARCHIVE = 304

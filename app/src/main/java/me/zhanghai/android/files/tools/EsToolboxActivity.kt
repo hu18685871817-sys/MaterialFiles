@@ -15,10 +15,12 @@ import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
+import android.provider.MediaStore
 import android.provider.Settings
 import android.text.Editable
 import android.text.TextUtils
 import android.text.TextWatcher
+import android.text.format.Formatter
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -39,6 +41,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java8.nio.file.Paths
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -47,14 +50,11 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import android.text.format.Formatter
 import me.zhanghai.android.files.app.AppActivity
 import me.zhanghai.android.files.util.createIntent
-import me.zhanghai.android.files.util.putArgs
 import me.zhanghai.android.files.viewer.archive.ArchivePreviewActivity
 import me.zhanghai.android.files.viewer.document.DocumentPreviewActivity
 import me.zhanghai.android.files.viewer.image.ImageViewerActivity
-import me.zhanghai.android.files.viewer.image.ImageViewerFragment
 import me.zhanghai.android.files.viewer.media.MediaPlayerActivity
 import me.zhanghai.android.files.viewer.reader.ReaderActivity
 
@@ -168,25 +168,35 @@ class EsToolboxActivity : AppActivity() {
         }
     }
 
-    // ==================== 1. Media & File Category Browser (PRD 2.1.3) ====================
+    // ==================== 1. Instant MediaStore + Cached Category Browser ====================
 
     private fun renderCategoryBrowserScreen() {
         titleTv.text = "分类文件库"
-        subtitleTv.text = "支持按文件类型或所属文件夹聚合浏览真实手机文件"
+        subtitleTv.text = "高速索引缓存 · 支持按文件类型或所属文件夹聚合浏览"
         contentFrame.removeAllViews()
 
         var groupByFolder = false
 
+        val refreshChip = makeChip("🔄", "#F1F5F9", "#334155") {
+            categoryCache.remove(currentCategory)
+            loadCategoryFiles(groupByFolder, forceRefresh = true)
+        }.apply {
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { rightMargin = dp(6) }
+        }
         val toggleGroupChip = makeChip("📁 按文件夹分组", "#EEF2FF", "#4338CA") {
             groupByFolder = !groupByFolder
-            loadCategoryFiles(groupByFolder)
+            loadCategoryFiles(groupByFolder, forceRefresh = false)
         }
+        headerRightContainer.addView(refreshChip)
         headerRightContainer.addView(toggleGroupChip)
 
-        loadCategoryFiles(groupByFolder)
+        loadCategoryFiles(groupByFolder, forceRefresh = false)
     }
 
-    private fun loadCategoryFiles(groupByFolder: Boolean) {
+    private fun loadCategoryFiles(groupByFolder: Boolean, forceRefresh: Boolean) {
         loadJob?.cancel()
         contentFrame.removeAllViews()
 
@@ -211,7 +221,7 @@ class EsToolboxActivity : AppActivity() {
             CAT_IMAGE to "🖼️ 图片",
             CAT_VIDEO to "🎬 视频",
             CAT_AUDIO to "🎵 音频",
-            CAT_DOC to "📄 文档",
+            CAT_DOC to "📄 文档/PDF",
             CAT_ARCHIVE to "🗜️ 压缩包",
             CAT_APK to "🤖 安装包 APK"
         )
@@ -234,7 +244,7 @@ class EsToolboxActivity : AppActivity() {
                 layoutParams = lp
                 setOnClickListener {
                     currentCategory = key
-                    loadCategoryFiles(groupByFolder)
+                    loadCategoryFiles(groupByFolder, forceRefresh = false)
                 }
             }
             tabRow.addView(chip)
@@ -253,20 +263,11 @@ class EsToolboxActivity : AppActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(12), dp(14), dp(24))
         }
-        listCol.addView(TextView(this).apply {
-            text = "正在扫描本地存储..."
-            setTextColor(Color.parseColor("#64748B"))
-            gravity = Gravity.CENTER
-            setPadding(dp(16), dp(36), dp(16), dp(36))
-        })
         listScroll.addView(listCol)
         mainCol.addView(listScroll)
         contentFrame.addView(mainCol)
 
-        loadJob = scope.launch {
-            val files = withContext(Dispatchers.IO) {
-                scanFilesByCategory(currentCategory)
-            }
+        fun renderFilesToUi(files: List<File>) {
             listCol.removeAllViews()
             if (files.isEmpty()) {
                 listCol.addView(TextView(this@EsToolboxActivity).apply {
@@ -276,14 +277,16 @@ class EsToolboxActivity : AppActivity() {
                     gravity = Gravity.CENTER
                     setPadding(dp(16), dp(48), dp(16), dp(48))
                 })
-                return@launch
+                return
             }
 
+            // Cap initial UI rendering to 250 items so ScrollView stays silky smooth
+            val displayFiles = files.take(250)
             if (groupByFolder) {
-                val grouped = files.groupBy { it.parentFile?.name ?: "根目录" }
+                val grouped = displayFiles.groupBy { it.parentFile?.name ?: "根目录" }
                 grouped.forEach { (folderName, folderFiles) ->
                     val folderHeader = TextView(this@EsToolboxActivity).apply {
-                        text = "📁 $folderName (${folderFiles.size} 项)"
+                        text = "📁 $folderName (${folderFiles.size})"
                         setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
                         setTypeface(null, Typeface.BOLD)
                         setTextColor(Color.parseColor("#1E3A8A"))
@@ -295,15 +298,37 @@ class EsToolboxActivity : AppActivity() {
                     }
                 }
             } else {
-                files.forEach { f ->
+                displayFiles.forEach { f ->
                     listCol.addView(createFileItemRow(f))
                 }
             }
+        }
+
+        // 1. Instant 0ms display from memory cache if available!
+        val cached = if (!forceRefresh) categoryCache[currentCategory] else null
+        if (cached != null) {
+            renderFilesToUi(cached)
+            return
+        }
+
+        listCol.addView(TextView(this).apply {
+            text = "⚡ 正在快速加载..."
+            setTextColor(Color.parseColor("#64748B"))
+            gravity = Gravity.CENTER
+            setPadding(dp(16), dp(36), dp(16), dp(36))
+        })
+
+        loadJob = scope.launch {
+            val files = withContext(Dispatchers.IO) {
+                queryFilesFast(this@EsToolboxActivity, currentCategory, forceRefresh)
+            }
+            renderFilesToUi(files)
         }
     }
 
     private fun createFileItemRow(file: File): View {
         val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+        val ext = file.extension.lowercase(Locale.ROOT)
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -320,13 +345,14 @@ class EsToolboxActivity : AppActivity() {
             layoutParams = lp
 
             val iconTv = TextView(this@EsToolboxActivity).apply {
-                text = when (currentCategory) {
-                    CAT_IMAGE -> "🖼️"
-                    CAT_VIDEO -> "🎬"
-                    CAT_AUDIO -> "🎵"
-                    CAT_DOC -> "📄"
-                    CAT_ARCHIVE -> "🗜️"
-                    CAT_APK -> "🤖"
+                text = when {
+                    ext == "pdf" -> "📕"
+                    currentCategory == CAT_IMAGE -> "🖼️"
+                    currentCategory == CAT_VIDEO -> "🎬"
+                    currentCategory == CAT_AUDIO -> "🎵"
+                    currentCategory == CAT_DOC -> "📄"
+                    currentCategory == CAT_ARCHIVE -> "🗜️"
+                    currentCategory == CAT_APK -> "🤖"
                     else -> "📄"
                 }
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
@@ -370,16 +396,16 @@ class EsToolboxActivity : AppActivity() {
             ext in setOf("mp3", "flac", "wav", "m4a", "ogg", "aac") -> {
                 startActivity(MediaPlayerActivity.createIntent(this, path, isAudio = true))
             }
-            ext in setOf("txt", "log", "ini", "prop") -> {
+            ext in setOf("txt", "log", "ini", "prop", "epub") -> {
                 startActivity(ReaderActivity.createIntent(this, path))
             }
-            ext in setOf("docx", "doc", "xlsx", "xls", "csv", "md", "markdown", "json", "xml") -> {
+            ext in setOf("pdf", "docx", "doc", "xlsx", "xls", "csv", "md", "markdown", "json", "xml") -> {
                 startActivity(DocumentPreviewActivity.createIntent(this, path))
             }
             ext in setOf("zip", "rar", "7z", "tar", "apk", "jar") -> {
                 startActivity(ArchivePreviewActivity.createIntent(this, path))
             }
-            ext in setOf("jpg", "jpeg", "png", "webp", "gif", "bmp") -> {
+            ext in setOf("jpg", "jpeg", "png", "webp", "gif", "bmp", "heic") -> {
                 startActivity(
                     ImageViewerActivity::class.createIntent().apply {
                         ImageViewerActivity.putExtras(this, listOf(path), 0)
@@ -392,7 +418,7 @@ class EsToolboxActivity : AppActivity() {
         }
     }
 
-    // ==================== 2. App Manager (PRD Section 2.5) ====================
+    // ==================== 2. App Manager ====================
 
     private data class AppEntry(
         val appName: String,
@@ -407,10 +433,10 @@ class EsToolboxActivity : AppActivity() {
 
     private fun renderAppManagerScreen() {
         titleTv.text = "应用管理器 (App Manager)"
-        subtitleTv.text = "对标 ES/RS：支持 APK 一键备份、作为 ZIP 浏览内部资源"
+        subtitleTv.text = "支持 APK 一键备份、作为 ZIP 浏览内部资源"
         contentFrame.removeAllViews()
 
-        var activeTab = 0 // 0 = User Apps, 1 = System Apps, 2 = Backed-up APKs
+        var activeTab = 0
         var searchQuery = ""
 
         val mainCol = LinearLayout(this).apply {
@@ -673,7 +699,7 @@ class EsToolboxActivity : AppActivity() {
             .show()
     }
 
-    // ==================== 3. Recycle Bin (PRD Section 2.1.5 / 2.3.1) ====================
+    // ==================== 3. Recycle Bin ====================
 
     private fun renderRecycleBinScreen() {
         titleTv.text = "回收站 (Recycle Bin)"
@@ -766,7 +792,7 @@ class EsToolboxActivity : AppActivity() {
         contentFrame.addView(scroll)
     }
 
-    // ==================== 4. 128-bit Encryption Vault (PRD Section 2.1.5) ====================
+    // ==================== 4. 128-bit Encryption Vault ====================
 
     private fun renderEncryptionVaultScreen() {
         titleTv.text = "🔐 128位文件加密保险箱"
@@ -864,6 +890,21 @@ class EsToolboxActivity : AppActivity() {
         const val CAT_ARCHIVE = "cat_archive"
         const val CAT_APK = "cat_apk"
 
+        // In-memory category cache so opening Image / Video / Audio / Doc categories is instantaneous
+        private val categoryCache = ConcurrentHashMap<String, List<File>>()
+
+        fun invalidateCategoryCache() {
+            categoryCache.clear()
+        }
+
+        fun prewarmCategoryCache(context: Context) {
+            listOf(CAT_IMAGE, CAT_VIDEO, CAT_AUDIO, CAT_DOC, CAT_ARCHIVE, CAT_APK).forEach { cat ->
+                if (!categoryCache.containsKey(cat)) {
+                    runCatching { queryFilesFast(context, cat, forceRefresh = false) }
+                }
+            }
+        }
+
         fun createCategoryIntent(context: Context, category: String): Intent =
             Intent(context, EsToolboxActivity::class.java).apply {
                 putExtra(EXTRA_MODE, MODE_CATEGORY)
@@ -875,20 +916,112 @@ class EsToolboxActivity : AppActivity() {
                 putExtra(EXTRA_MODE, mode)
             }
 
-        fun scanFilesByCategory(category: String): List<File> {
-            val exts = when (category) {
+        private fun getCategoryExtensions(category: String): Set<String> =
+            when (category) {
                 CAT_IMAGE -> setOf("jpg", "jpeg", "png", "webp", "gif", "bmp", "heic")
                 CAT_VIDEO -> setOf("mp4", "mkv", "avi", "mov", "webm", "3gp", "flv", "ts")
                 CAT_AUDIO -> setOf("mp3", "flac", "wav", "m4a", "ogg", "aac", "opus")
-                CAT_DOC -> setOf("docx", "doc", "xlsx", "xls", "csv", "md", "markdown", "txt", "pdf", "pptx", "ppt")
+                CAT_DOC -> setOf("pdf", "docx", "doc", "xlsx", "xls", "csv", "md", "markdown", "txt", "epub", "pptx", "ppt")
                 CAT_ARCHIVE -> setOf("zip", "rar", "7z", "tar", "gz", "bz2", "xz")
                 CAT_APK -> setOf("apk", "apks", "xapk")
                 else -> emptySet()
             }
+
+        /**
+         * Instant MediaStore query + targeted common user directories scan with memory caching.
+         */
+        fun queryFilesFast(context: Context, category: String, forceRefresh: Boolean = false): List<File> {
+            if (!forceRefresh) {
+                categoryCache[category]?.let { return it }
+            }
+
+            val exts = getCategoryExtensions(category)
+            val seenPaths = HashSet<String>()
+            val results = ArrayList<File>()
+
+            // 1. Millisecond-level MediaStore indexed query
+            runCatching {
+                val contentUri = when (category) {
+                    CAT_IMAGE -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                    CAT_VIDEO -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                    CAT_AUDIO -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+                    else -> MediaStore.Files.getContentUri("external")
+                }
+                val projection = arrayOf(
+                    MediaStore.MediaColumns.DATA,
+                    MediaStore.MediaColumns.SIZE
+                )
+                val sortOrder = "${MediaStore.MediaColumns.DATE_MODIFIED} DESC"
+                context.contentResolver.query(contentUri, projection, null, null, sortOrder)?.use { cursor ->
+                    val dataIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+                    val sizeIdx = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE)
+                    while (cursor.moveToNext()) {
+                        val size = if (sizeIdx >= 0) cursor.getLong(sizeIdx) else 0L
+                        if (size <= 0L || dataIdx < 0) continue
+                        val pathStr = cursor.getString(dataIdx) ?: continue
+                        val dotIdx = pathStr.lastIndexOf('.')
+                        val ext = if (dotIdx >= 0) pathStr.substring(dotIdx + 1).lowercase(Locale.ROOT) else ""
+                        if (ext in exts && seenPaths.add(pathStr)) {
+                            val f = File(pathStr)
+                            if (f.exists() && f.isFile && !f.name.startsWith(".")) {
+                                results.add(f)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. Fast targeted scan of standard user folders (depth <= 2) for newly added unindexed files
+            val root = Environment.getExternalStorageDirectory()
+            val targetFolders = listOfNotNull(
+                root,
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM),
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES),
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC),
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
+            ).distinctBy { it.absolutePath }
+
+            fun quickScan(dir: File, maxDepth: Int, currentDepth: Int) {
+                if (currentDepth > maxDepth) return
+                val list = dir.listFiles() ?: return
+                for (f in list) {
+                    if (f.name.startsWith(".")) continue
+                    if (f.isFile && f.length() > 0) {
+                        if (f.extension.lowercase(Locale.ROOT) in exts && seenPaths.add(f.absolutePath)) {
+                            results.add(f)
+                        }
+                    } else if (f.isDirectory && currentDepth < maxDepth) {
+                        val lower = f.name.lowercase(Locale.ROOT)
+                        if (lower != "android" && lower != "cache" && lower != ".thumbnails") {
+                            quickScan(f, maxDepth, currentDepth + 1)
+                        }
+                    }
+                }
+            }
+
+            runCatching {
+                for (folder in targetFolders) {
+                    if (folder.exists() && folder.isDirectory) {
+                        val depthLimit = if (folder.absolutePath == root.absolutePath) 1 else 2
+                        quickScan(folder, depthLimit, 0)
+                    }
+                }
+            }
+
+            val sorted = results.sortedByDescending { it.lastModified() }
+            categoryCache[category] = sorted
+            return sorted
+        }
+
+        fun scanFilesByCategory(category: String): List<File> {
+            categoryCache[category]?.let { return it }
+            val exts = getCategoryExtensions(category)
             val results = mutableListOf<File>()
             val root = Environment.getExternalStorageDirectory()
             fun walk(dir: File, depth: Int) {
-                if (depth > 5) return
+                if (depth > 3) return
                 val list = dir.listFiles() ?: return
                 for (f in list) {
                     if (f.name.startsWith(".")) continue
@@ -907,7 +1040,9 @@ class EsToolboxActivity : AppActivity() {
                 walk(root, 0)
             } catch (_: Exception) {
             }
-            return results.sortedByDescending { it.lastModified() }
+            val sorted = results.sortedByDescending { it.lastModified() }
+            categoryCache[category] = sorted
+            return sorted
         }
     }
 }

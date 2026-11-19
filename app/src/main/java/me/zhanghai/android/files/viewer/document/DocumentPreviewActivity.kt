@@ -7,12 +7,18 @@ package me.zhanghai.android.files.viewer.document
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
+import android.os.ParcelFileDescriptor
 import android.text.Editable
 import android.text.TextUtils
 import android.text.TextWatcher
@@ -23,8 +29,10 @@ import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
@@ -79,8 +87,15 @@ class DocumentPreviewActivity : AppActivity() {
     private var currentTextEncoding: Charset = Charsets.UTF_8
     private var showLineNumbers: Boolean = true
 
+    // PDF Reader state
+    private var activePdfRenderer: PdfRenderer? = null
+    private var activePdfDescriptor: ParcelFileDescriptor? = null
+    private var activePdfBitmap: Bitmap? = null
+    private var pdfZoomScale: Float = 1.0f
+    private var pdfNightMode: Boolean = false
+
     // Phone document browser state
-    private var selectedCategoryFilter: String = "ALL" // ALL, WORD, EXCEL, MD, TXT
+    private var selectedCategoryFilter: String = "ALL" // ALL, PDF, WORD, EXCEL, MD, TXT
     private var scannedDocs: List<File> = emptyList()
     private var currentBrowseDir: File = Environment.getExternalStorageDirectory()
     private var isFolderBrowseMode: Boolean = false
@@ -169,8 +184,16 @@ class DocumentPreviewActivity : AppActivity() {
     }
 
     override fun onDestroy() {
+        closeActivePdfRenderer()
         super.onDestroy()
         scope.cancel()
+    }
+
+    private fun closeActivePdfRenderer() {
+        runCatching { activePdfRenderer?.close() }
+        activePdfRenderer = null
+        runCatching { activePdfDescriptor?.close() }
+        activePdfDescriptor = null
     }
 
     private fun setupHeader() {
@@ -250,9 +273,10 @@ class DocumentPreviewActivity : AppActivity() {
     // ==================== Real Phone Document Browser ====================
 
     private fun showPhoneDocumentBrowser() {
+        closeActivePdfRenderer()
         isInBrowserMode = true
-        titleText.text = "手机文档与 Markdown 浏览器"
-        subtitleText.text = "扫描手机本地 DOCX / XLSX / CSV / MD / TXT 文件"
+        titleText.text = "PDF / Office / Markdown 文档阅读器"
+        subtitleText.text = "浏览手机本地 PDF / DOCX / XLSX / CSV / MD / TXT 文件"
         headerActionsLayout.removeAllViews()
 
         headerActionsLayout.addView(
@@ -294,7 +318,7 @@ class DocumentPreviewActivity : AppActivity() {
             val found = withContext(Dispatchers.IO) {
                 val results = mutableListOf<File>()
                 val root = Environment.getExternalStorageDirectory()
-                val supportedExts = setOf("docx", "doc", "xlsx", "xls", "csv", "md", "markdown", "txt", "json", "xml", "log", "ini", "yaml", "yml")
+                val supportedExts = setOf("pdf", "docx", "doc", "xlsx", "xls", "csv", "md", "markdown", "txt", "json", "xml", "log", "ini", "yaml", "yml")
 
                 fun walk(dir: File, depth: Int) {
                     if (depth > 6) return
@@ -373,11 +397,12 @@ class DocumentPreviewActivity : AppActivity() {
         }
 
         val filters = listOf(
-            "ALL" to "全部文档 (${scannedDocs.size})",
+            "ALL" to "全部 (${scannedDocs.size})",
+            "PDF" to "📕 PDF (${scannedDocs.count { it.extension.lowercase(Locale.ROOT) == "pdf" }})",
             "WORD" to "📘 Word (${scannedDocs.count { it.extension.lowercase(Locale.ROOT) in setOf("docx", "doc") }})",
             "EXCEL" to "📗 Excel/CSV (${scannedDocs.count { it.extension.lowercase(Locale.ROOT) in setOf("xlsx", "xls", "csv") }})",
             "MD" to "🟣 Markdown (${scannedDocs.count { it.extension.lowercase(Locale.ROOT) in setOf("md", "markdown") }})",
-            "TXT" to "📄 TXT/代码 (${scannedDocs.count { it.extension.lowercase(Locale.ROOT) !in setOf("docx", "doc", "xlsx", "xls", "csv", "md", "markdown") }})"
+            "TXT" to "📄 TXT/代码 (${scannedDocs.count { it.extension.lowercase(Locale.ROOT) !in setOf("pdf", "docx", "doc", "xlsx", "xls", "csv", "md", "markdown") }})"
         )
 
         filters.forEach { (key, label) ->
@@ -458,10 +483,11 @@ class DocumentPreviewActivity : AppActivity() {
             val filtered = scannedDocs.filter { file ->
                 val ext = file.extension.lowercase(Locale.ROOT)
                 val catMatch = when (selectedCategoryFilter) {
+                    "PDF" -> ext == "pdf"
                     "WORD" -> ext in setOf("docx", "doc")
                     "EXCEL" -> ext in setOf("xlsx", "xls", "csv")
                     "MD" -> ext in setOf("md", "markdown")
-                    "TXT" -> ext !in setOf("docx", "doc", "xlsx", "xls", "csv", "md", "markdown")
+                    "TXT" -> ext !in setOf("pdf", "docx", "doc", "xlsx", "xls", "csv", "md", "markdown")
                     else -> true
                 }
                 val queryMatch = searchQuery.isBlank() ||
@@ -503,6 +529,7 @@ class DocumentPreviewActivity : AppActivity() {
             filtered.forEach { file ->
                 val ext = file.extension.lowercase(Locale.ROOT)
                 val (badgeIcon, badgeColor) = when (ext) {
+                    "pdf" -> "PDF" to "#DC2626"
                     "docx", "doc" -> "W" to "#2563EB"
                     "xlsx", "xls", "csv" -> "X" to "#16A34A"
                     "md", "markdown" -> "M↓" to "#7C3AED"
@@ -750,6 +777,7 @@ class DocumentPreviewActivity : AppActivity() {
     }
 
     private fun openDocumentFromBytes(fileName: String, bytes: ByteArray, localFile: File?) {
+        closeActivePdfRenderer()
         isInBrowserMode = false
         currentDocTitle = fileName
         currentDocBytes = bytes
@@ -763,13 +791,14 @@ class DocumentPreviewActivity : AppActivity() {
         headerActionsLayout.removeAllViews()
         if (!launchedWithDirectFile) {
             headerActionsLayout.addView(
-                createHeaderActionChip("📂 换文件", "#F1F5F9", "#334155") {
+                createHeaderActionChip("📂", "#F1F5F9", "#334155") {
                     showPhoneDocumentBrowser()
                 }
             )
         }
 
         when (currentDocExtension) {
+            "pdf" -> renderPdfDocument(fileName, bytes, localFile)
             "docx", "doc" -> renderWordDocument(fileName, bytes)
             "xlsx", "xls", "csv" -> renderExcelDocument(fileName, bytes, isCsv = currentDocExtension == "csv")
             "md", "markdown" -> {
@@ -777,6 +806,236 @@ class DocumentPreviewActivity : AppActivity() {
                 renderMarkdownDocument(fileName, bytes, localFile)
             }
             else -> renderTextEditorDocument(fileName, bytes, localFile)
+        }
+    }
+
+    // ==================== 0. Built-in Native PDF Reader (PdfRenderer) ====================
+
+    private fun renderPdfDocument(fileName: String, bytes: ByteArray, localFile: File?) {
+        bodyContainer.removeAllViews()
+        scope.launch {
+            val pdfFile = withContext(Dispatchers.IO) {
+                if (localFile != null && localFile.exists() && localFile.canRead()) {
+                    localFile
+                } else {
+                    val temp = File(cacheDir, "active_preview_doc.pdf")
+                    runCatching { temp.writeBytes(bytes) }
+                    temp
+                }
+            }
+
+            val openResult = withContext(Dispatchers.IO) {
+                runCatching {
+                    val pfd = ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY)
+                    val renderer = PdfRenderer(pfd)
+                    pfd to renderer
+                }
+            }
+
+            val pair = openResult.getOrNull()
+            if (pair == null || pair.second.pageCount <= 0) {
+                pair?.second?.let { runCatching { it.close() } }
+                pair?.first?.let { runCatching { it.close() } }
+                val errTv = TextView(this@DocumentPreviewActivity).apply {
+                    text = "无法解析该 PDF 文件 (${openResult.exceptionOrNull()?.localizedMessage ?: "无有效页面"})"
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                    setTextColor(Color.parseColor("#DC2626"))
+                    gravity = Gravity.CENTER
+                    setPadding(dp(24), dp(48), dp(24), dp(48))
+                }
+                bodyContainer.addView(errTv)
+                return@launch
+            }
+
+            activePdfDescriptor = pair.first
+            activePdfRenderer = pair.second
+            val totalPages = pair.second.pageCount
+            var currentPageIdx = 0
+
+            val mainCol = LinearLayout(this@DocumentPreviewActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setBackgroundColor(if (pdfNightMode) Color.parseColor("#0F172A") else Color.parseColor("#E2E8F0"))
+                layoutParams = FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+            }
+
+            val vScroll = ScrollView(this@DocumentPreviewActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    0,
+                    1f
+                )
+            }
+            val hScroll = HorizontalScrollView(this@DocumentPreviewActivity).apply {
+                layoutParams = FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            }
+            val pageStage = FrameLayout(this@DocumentPreviewActivity).apply {
+                setPadding(dp(12), dp(12), dp(12), dp(16))
+            }
+            val pageImageView = ImageView(this@DocumentPreviewActivity).apply {
+                adjustViewBounds = true
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(6).toFloat()
+                    setColor(Color.WHITE)
+                    setStroke(dp(1), Color.parseColor("#CBD5E1"))
+                }
+                elevation = dp(4).toFloat()
+            }
+            pageStage.addView(pageImageView)
+            hScroll.addView(pageStage)
+            vScroll.addView(hScroll)
+            mainCol.addView(vScroll)
+
+            // Bottom icon-only control bar for PDF navigation
+            val bottomBar = LinearLayout(this@DocumentPreviewActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setBackgroundColor(Color.parseColor("#0F172A"))
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+            }
+
+            fun makePdfIconBtn(icon: String, onClick: () -> Unit): TextView {
+                return TextView(this@DocumentPreviewActivity).apply {
+                    text = icon
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                    setTypeface(null, Typeface.BOLD)
+                    setTextColor(Color.WHITE)
+                    gravity = Gravity.CENTER
+                    setPadding(dp(12), dp(6), dp(12), dp(6))
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(12).toFloat()
+                        setColor(Color.parseColor("#1E293B"))
+                    }
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        leftMargin = dp(4)
+                        rightMargin = dp(4)
+                    }
+                    setOnClickListener { onClick() }
+                }
+            }
+
+            val pageIndicatorTv = TextView(this@DocumentPreviewActivity).apply {
+                text = "1 / $totalPages"
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+                setTypeface(Typeface.MONOSPACE, Typeface.BOLD)
+                setTextColor(Color.WHITE)
+                setPadding(dp(8), dp(4), dp(8), dp(4))
+            }
+
+            val pageSeekBar = SeekBar(this@DocumentPreviewActivity).apply {
+                max = (totalPages - 1).coerceAtLeast(0)
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            }
+
+            fun applyNightColorFilter() {
+                if (pdfNightMode) {
+                    val invertMatrix = ColorMatrix(
+                        floatArrayOf(
+                            -1f, 0f, 0f, 0f, 255f,
+                            0f, -1f, 0f, 0f, 255f,
+                            0f, 0f, -1f, 0f, 255f,
+                            0f, 0f, 0f, 1f, 0f
+                        )
+                    )
+                    pageImageView.colorFilter = ColorMatrixColorFilter(invertMatrix)
+                    mainCol.setBackgroundColor(Color.parseColor("#0F172A"))
+                } else {
+                    pageImageView.clearColorFilter()
+                    mainCol.setBackgroundColor(Color.parseColor("#E2E8F0"))
+                }
+            }
+
+            fun renderPageAtIndex(idx: Int) {
+                val renderer = activePdfRenderer ?: return
+                val clamped = idx.coerceIn(0, totalPages - 1)
+                currentPageIdx = clamped
+                pageIndicatorTv.text = "${clamped + 1} / $totalPages"
+                subtitleText.text = "PDF 阅读器 · 第 ${clamped + 1} / $totalPages 页 · 缩放 ${(pdfZoomScale * 100).toInt()}%"
+                pageSeekBar.progress = clamped
+
+                scope.launch {
+                    val bmp = withContext(Dispatchers.IO) {
+                        synchronized(renderer) {
+                            runCatching {
+                                renderer.openPage(clamped).use { page ->
+                                    val screenW = (resources.displayMetrics.widthPixels - dp(24)).coerceAtLeast(360)
+                                    val targetW = (screenW * pdfZoomScale).toInt().coerceIn(360, 2800)
+                                    val ratio = page.height.toFloat() / page.width.coerceAtLeast(1).toFloat()
+                                    val targetH = (targetW * ratio).toInt().coerceIn(360, 4000)
+                                    val bitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
+                                    val canvas = Canvas(bitmap)
+                                    canvas.drawColor(Color.WHITE)
+                                    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                                    bitmap
+                                }
+                            }.getOrNull()
+                        }
+                    }
+                    if (bmp != null) {
+                        activePdfBitmap = bmp
+                        pageImageView.setImageBitmap(bmp)
+                        applyNightColorFilter()
+                        vScroll.scrollTo(0, 0)
+                    }
+                }
+            }
+
+            // Header action chips for PDF: Zoom & Night Mode
+            val zoomChip = createHeaderActionChip("🔍 ${(pdfZoomScale * 100).toInt()}%", "#FEE2E2", "#B91C1C") {}
+            zoomChip.setOnClickListener {
+                pdfZoomScale = when (pdfZoomScale) {
+                    1.0f -> 1.5f
+                    1.5f -> 2.0f
+                    else -> 1.0f
+                }
+                zoomChip.text = "🔍 ${(pdfZoomScale * 100).toInt()}%"
+                renderPageAtIndex(currentPageIdx)
+            }
+            headerActionsLayout.addView(zoomChip)
+
+            val nightChip = createHeaderActionChip("🌗", "#E2E8F0", "#0F172A") {
+                pdfNightMode = !pdfNightMode
+                applyNightColorFilter()
+            }
+            headerActionsLayout.addView(nightChip)
+
+            val prevBtn = makePdfIconBtn("◀") {
+                if (currentPageIdx > 0) renderPageAtIndex(currentPageIdx - 1)
+            }
+            val nextBtn = makePdfIconBtn("▶") {
+                if (currentPageIdx < totalPages - 1) renderPageAtIndex(currentPageIdx + 1)
+            }
+
+            pageSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (fromUser) {
+                        pageIndicatorTv.text = "${progress + 1} / $totalPages"
+                    }
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                    val target = seekBar?.progress ?: 0
+                    renderPageAtIndex(target)
+                }
+            })
+
+            bottomBar.addView(prevBtn)
+            bottomBar.addView(pageSeekBar)
+            bottomBar.addView( pageIndicatorTv)
+            bottomBar.addView(nextBtn)
+            mainCol.addView(bottomBar)
+
+            bodyContainer.addView(mainCol)
+            renderPageAtIndex(0)
         }
     }
 

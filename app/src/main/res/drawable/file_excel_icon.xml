@@ -1,10 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-
-<!--
-  ~ Copyright (c) 2018 Hai Zhang <dreaming.in.code.zh@gmail.com>
-  ~ All Rights Reserved.
-  -->
-
 <vector
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
@@ -12,7 +6,37 @@
     android:viewportWidth="24"
     android:viewportHeight="24">
 
+    <!-- 3D Drop Shadow Base -->
     <path
-        android:fillColor="@color/file_icon_green"
-        android:pathData="M19 3H5c-1.1 0,-2 0.9,-2 2v14c0 1.1 0.9 2 2 2h14c1.1 0 2,-0.9 2,-2V5c0,-1.1,-0.9,-2,-2,-2zm-2.8 14h-2L12 13.2 9.8 17h-2l3.2,-5,-3.2,-5h2l2.2 3.8L14.2 7h2L13 12l3.2 5z" />
+        android:fillColor="#14532D"
+        android:pathData="M6.2,3.2H15.0L20.0,8.2V19.8C20.0,21.01 19.01,22 17.8,22H6.2C4.99,22 4.0,21.01 4.0,19.8V5.4C4.0,4.19 4.99,3.2 6.2,3.2Z" />
+
+    <!-- Main 3D Emerald Spreadsheet Page Body -->
+    <path
+        android:fillColor="#16A34A"
+        android:pathData="M5.8,2H14.6L19.6,7V18.8C19.6,20.01 18.61,21 17.4,21H5.8C4.59,21 3.6,20.01 3.6,18.8V4.2C3.6,2.99 4.59,2 5.8,2Z" />
+
+    <!-- Lower Shading Band -->
+    <path
+        android:fillColor="#15803D"
+        android:pathData="M3.6,13.5H19.6V18.8C19.6,20.01 18.61,21 17.4,21H5.8C4.59,21 3.6,20.01 3.6,18.8V13.5Z" />
+
+    <!-- Folded Top-Right Dog-Ear Flap -->
+    <path
+        android:fillColor="#86EFAC"
+        android:pathData="M14.6,2L19.6,7H15.9C15.18,7 14.6,6.42 14.6,5.7V2Z" />
+
+    <!-- Spreadsheet Cells Grid -->
+    <path
+        android:fillColor="#DCFCE7"
+        android:pathData="M6.2,6.5H11.0V8.3H6.2V6.5ZM12.0,6.5H16.8V8.3H12.0V6.5ZM6.2,9.2H11.0V11.0H6.2V9.2ZM12.0,9.2H16.8V11.0H12.0V9.2ZM6.2,11.9H11.0V13.5H6.2V11.9ZM12.0,11.9H16.8V13.5H12.0V11.9Z" />
+
+    <!-- White Pill Badge with Bold 'X' -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M5.4,14.4H17.8C18.3,14.4 18.7,14.8 18.7,15.3V18.2C18.7,18.7 18.3,19.1 17.8,19.1H5.4C4.9,19.1 4.5,18.7 4.5,18.2V15.3C4.5,14.8 4.9,14.4 5.4,14.4Z" />
+
+    <path
+        android:fillColor="#15803D"
+        android:pathData="M9.4,15.0L11.0,16.75L9.3,18.5H10.5L11.6,17.3L12.7,18.5H13.9L12.2,16.75L13.8,15.0H12.6L11.6,16.15L10.6,15.0H9.4Z" />
 </vector>

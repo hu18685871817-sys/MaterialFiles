@@ -808,7 +808,7 @@
     <string name="shortcut_ftp_server_title" translatable="false">@string/ftp_server_title</string>
 
     <string name="navigation_disk_analysis">Disk analysis</string>
-    <string name="navigation_media_player">Media player</string>
+    <string name="navigation_media_player">VLC Media Player Settings</string>
     <string name="navigation_cloud_drive">Cloud drives (Google Drive / OneDrive)</string>
     <string name="file_list_action_disk_analysis">Analyze directory space</string>
     <string name="disk_analysis_title">Disk Analysis</string>
@@ -823,14 +823,18 @@
     <string name="disk_analysis_category_document">Documents</string>
     <string name="disk_analysis_category_apk">Packages (APK)</string>
     <string name="disk_analysis_category_other">Archives &amp; Other</string>
-    <string name="media_player_title">Media Player</string>
+    <string name="media_player_title">VLC Media Player</string>
     <string name="storage_add_storage_google_drive">Google Drive</string>
     <string name="storage_add_storage_onedrive">Microsoft OneDrive</string>
     <string name="cloud_drive_title">Cloud Drive Explorer</string>
     <string name="navigation_document_preview">Office &amp; Markdown Viewer</string>
-    <string name="navigation_built_in_reader">Built-in Book Reader</string>
+    <string name="navigation_built_in_reader">Readext Reader Settings</string>
     <string name="navigation_archive_preview">Archive Preview &amp; Split/Encrypt</string>
     <string name="document_preview_title">Document &amp; Markdown Studio</string>
-    <string name="built_in_reader_title">Built-in Reader</string>
+    <string name="built_in_reader_title">Readext Reader</string>
     <string name="archive_preview_title">Archive Inspector</string>
+    <string name="file_list_action_grid_columns_2">Grid layout: Large (2 cols)</string>
+    <string name="file_list_action_grid_columns_3">Grid layout: Standard (3 cols)</string>
+    <string name="file_list_action_grid_columns_4">Grid layout: Compact (4 cols)</string>
+    <string name="file_list_action_grid_columns_5">Grid layout: Dense (5 cols)</string>
 </resources>

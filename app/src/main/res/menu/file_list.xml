@@ -37,6 +37,22 @@
                     android:title="@string/file_list_action_view_grid" />
             </group>
             <group
+                android:id="@+id/group_grid_columns"
+                android:checkableBehavior="single">
+                <item
+                    android:id="@+id/action_grid_columns_2"
+                    android:title="@string/file_list_action_grid_columns_2" />
+                <item
+                    android:id="@+id/action_grid_columns_3"
+                    android:title="@string/file_list_action_grid_columns_3" />
+                <item
+                    android:id="@+id/action_grid_columns_4"
+                    android:title="@string/file_list_action_grid_columns_4" />
+                <item
+                    android:id="@+id/action_grid_columns_5"
+                    android:title="@string/file_list_action_grid_columns_5" />
+            </group>
+            <group
                 android:id="@+id/group_sort"
                 android:checkableBehavior="single">
                 <item

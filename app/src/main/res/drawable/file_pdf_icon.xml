@@ -1,10 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-
-<!--
-  ~ Copyright (c) 2018 Hai Zhang <dreaming.in.code.zh@gmail.com>
-  ~ All Rights Reserved.
-  -->
-
 <vector
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
@@ -12,7 +6,51 @@
     android:viewportWidth="24"
     android:viewportHeight="24">
 
+    <!-- 3D Drop Shadow Base -->
     <path
-        android:fillColor="@color/file_icon_deep_red"
-        android:pathData="M7 11.5h1v-1H7v1zM19 3H5c-1.1 0,-2 0.9,-2 2v14c0 1.1 0.9 2 2 2h14c1.1 0 2,-0.9 2,-2V5c0,-1.1,-0.9,-2,-2,-2zm-9.5 8.5c0 0.83,-0.67 1.5,-1.5 1.5H7v2H5.5V9H8c0.83 0 1.5 0.67 1.5 1.5v1zm10,-1H17v1h1.5V13H17v2h-1.5V9h4v1.5zm-5 3c0 0.83,-0.67 1.5,-1.5 1.5h-2.5V9H13c0.83 0 1.5 0.67 1.5 1.5v3zm-2.5 0h1v-3h-1v3z" />
+        android:fillColor="#991B1B"
+        android:pathData="M6,3.2H14.8L19.8,8.2V19.8C19.8,21.01 18.81,22 17.6,22H6.4C5.19,22 4.2,21.01 4.2,19.8V5.4C4.2,4.19 5.19,3.2 6,3.2Z" />
+
+    <!-- Main 3D Crimson Page Body -->
+    <path
+        android:fillColor="#EF4444"
+        android:pathData="M5.8,2H14.5L19.5,7V18.8C19.5,20.01 18.51,21 17.3,21H5.8C4.59,21 3.6,20.01 3.6,18.8V4.2C3.6,2.99 4.59,2 5.8,2Z" />
+
+    <!-- Lower Shading Band for Depth -->
+    <path
+        android:fillColor="#DC2626"
+        android:pathData="M3.6,13.5H19.5V18.8C19.5,20.01 18.51,21 17.3,21H5.8C4.59,21 3.6,20.01 3.6,18.8V13.5Z" />
+
+    <!-- Top Edge Sunlit Highlight -->
+    <path
+        android:fillColor="#FCA5A5"
+        android:fillAlpha="0.65"
+        android:pathData="M5.8,2H14.5V3.1H5.8C5.1,3.1 4.5,3.5 4.2,4.1V3.6C4.2,2.7 4.9,2 5.8,2Z" />
+
+    <!-- Folded Top-Right Corner Shadow -->
+    <path
+        android:fillColor="#7F1D1D"
+        android:fillAlpha="0.45"
+        android:pathData="M14.5,7L19.5,7L19.5,8.2L14.5,7Z" />
+
+    <!-- Folded Top-Right Dog-Ear Flap -->
+    <path
+        android:fillColor="#FCA5A5"
+        android:pathData="M14.5,2L19.5,7H15.8C15.08,7 14.5,6.42 14.5,5.7V2Z" />
+
+    <!-- White Pill Banner for PDF Mark -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.95"
+        android:pathData="M5.4,13.6H17.7C18.25,13.6 18.7,14.05 18.7,14.6V17.4C18.7,17.95 18.25,18.4 17.7,18.4H5.4C4.85,18.4 4.4,17.95 4.4,17.4V14.6C4.4,14.05 4.85,13.6 5.4,13.6Z" />
+
+    <!-- Upper Document Curve / Crest Icon -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M7.2,6.5H12.2V7.7H7.2V6.5ZM7.2,9.0H15.8V10.2H7.2V9.0ZM7.2,11.3H13.5V12.4H7.2V11.3Z" />
+
+    <!-- Crisp "PDF" Typography inside White Pill -->
+    <path
+        android:fillColor="#B91C1C"
+        android:pathData="M6.3,14.5H8.2C8.8,14.5 9.2,14.9 9.2,15.5C9.2,16.1 8.8,16.5 8.2,16.5H7.2V17.6H6.3V14.5ZM7.2,15.2V15.8H8.0C8.2,15.8 8.35,15.68 8.35,15.5C8.35,15.32 8.2,15.2 8.0,15.2H7.2ZM10.0,14.5H11.8C12.7,14.5 13.3,15.1 13.3,16.05C13.3,17.0 12.7,17.6 11.8,17.6H10.0V14.5ZM10.9,15.2V16.9H11.7C12.15,16.9 12.4,16.58 12.4,16.05C12.4,15.52 12.15,15.2 11.7,15.2H10.9ZM14.2,14.5H16.8V15.2H15.1V15.75H16.5V16.45H15.1V17.6H14.2V14.5Z" />
 </vector>

@@ -69,6 +69,15 @@ class FileListAdapter(
             }
         }
 
+    var gridColumnsCount: Int = 3
+        set(value) {
+            if (field == value) return
+            field = value
+            if (this::_viewType.isInitialized && _viewType == FileViewType.GRID) {
+                notifyDataSetChanged()
+            }
+        }
+
     var pickOptions: PickOptions? = null
         set(value) {
             field = value
@@ -274,6 +283,16 @@ class FileListAdapter(
             }
         }
         holder.iconLayout.setOnClickListener { selectFile(file) }
+        if (this::_viewType.isInitialized && _viewType == FileViewType.GRID) {
+            holder.iconLayout.isVisible = gridColumnsCount <= 3 || selectedFiles.isNotEmpty()
+            holder.nameText.textSize = when {
+                gridColumnsCount >= 5 -> 10.5f
+                gridColumnsCount == 4 -> 11f
+                else -> 12f
+            }
+        } else {
+            holder.iconLayout.isVisible = true
+        }
         val iconRes = file.mimeType.iconRes
         holder.iconImage.apply {
             isVisible = true

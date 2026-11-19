@@ -405,37 +405,4 @@ object MarkdownRenderer {
         }
         return ssb
     }
-
-    fun sampleMarkdownContent(): String = """
-# Markdown 实时渲染与编辑引擎
-
-欢迎使用 **Material Files** 内置的 **Markdown 实时渲染与文档工作台**！您可以在上方切换 **实时预览**、**分屏实时编辑** 与 **源码模式**。
-
-## 1. 核心特性一览
-- [x] 支持 **Office 文档**（`.docx` Word、`.xlsx` Excel、`.txt` 文本）直接打开预览
-- [x] 支持 **Markdown 实时渲染**（输入即时刷新标题、代码、表格与清单）
-- [x] 支持 **压缩文件免解压内预览**（查看 ZIP / RAR / 7Z 文件列表与内容）
-- [ ] 点击上方工具栏按钮可快速插入语法标签并保存到本地文件
-
-## 2. 代码高亮块示例
-```kotlin
-fun previewDocument(file: File) {
-    when (file.extension.lowercase()) {
-        "docx" -> OfficeDocumentParser.parseDocx(file.inputStream())
-        "xlsx" -> OfficeDocumentParser.parseXlsx(file.inputStream())
-        "md" -> MarkdownRenderer.render(file.readText())
-    }
-}
-```
-
-## 3. 格式对比表格
-| 文件格式 | 预览能力 | 编辑保存 | 特色功能 |
-| --- | --- | --- | --- |
-| DOCX | 段落/标题/表格解析 | 支持导出TXT | OpenXML 直读 |
-| XLSX | 多工作表网格视图 | 单元格公式检查 | 双向滚动表格 |
-| Markdown | 实时分屏渲染 | 源码实时保存 | 快捷语法工具栏 |
-| TXT | 多编码识别预览 | 全文编辑保存 | 一键转入内置阅读器 |
-
-> 提示：点击右上角「保存」可将当前编辑内容写回磁盘文件，或点击「阅读模式」进入带记忆缓存的内置阅读器。
-""".trimIndent()
 }
